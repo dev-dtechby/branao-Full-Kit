@@ -33,9 +33,11 @@ const footer = (tooltipItems: TooltipItem<'line'>[]) => {
   let sum = 0;
 
   tooltipItems.forEach(function (tooltipItem) {
-    sum += tooltipItem.parsed.y;
+  const value = tooltipItem?.parsed?.y ?? 0;
+  sum += Number(value);
   });
   return "Sum: " + sum;
+
 };
 
 const CustomTooltip = ({ height = 350 }) => {
