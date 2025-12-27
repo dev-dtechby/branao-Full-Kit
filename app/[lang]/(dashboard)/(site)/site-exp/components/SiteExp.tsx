@@ -158,7 +158,7 @@ export default function SiteExp() {
                       <Button size="icon" variant="outline">
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="destructive">
+                      <Button size="icon" variant="soft">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </td>

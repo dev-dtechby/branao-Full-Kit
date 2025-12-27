@@ -115,7 +115,7 @@ export default function SiteListTable() {
                       <Pencil className="h-4 w-4 text-yellow-600" />
                     </Button>
 
-                    <Button size="icon" variant="destructive" className="p-2">
+                    <Button size="icon" variant="outline" className="p-2">
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </td>

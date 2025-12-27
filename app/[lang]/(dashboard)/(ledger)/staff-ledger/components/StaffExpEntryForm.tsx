@@ -118,7 +118,7 @@ export default function StaffExpEntryForm({ staff, onClose }: StaffExpEntryFormP
       {/* ---------- Buttons ---------- */}
       <div className="flex flex-wrap gap-3 pt-3">
         <Button className="px-8">Save</Button>
-        <Button variant="secondary" className="px-8">Update</Button>
+        <Button variant="soft" className="px-8">Update</Button>
         <Button variant="outline" className="px-8">Reset</Button>
       </div>
     </Card>

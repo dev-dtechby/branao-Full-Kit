@@ -103,7 +103,7 @@ export default function PartyPurchaseForm() {
         <div className="flex gap-4 pt-4">
           <Button className="px-8">Save</Button>
 
-          <Button variant="secondary" className="px-8">
+          <Button variant="outline" className="px-8">
             Update
           </Button>
 
