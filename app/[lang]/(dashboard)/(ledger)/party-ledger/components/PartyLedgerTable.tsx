@@ -162,7 +162,7 @@ export default function PartyLedgerTable() {
                         </Button>
                         <Button
                           size="icon"
-                          variant="destructive"
+                          variant="outline"
                           onClick={() => setOpenDelete(true)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -191,7 +191,7 @@ export default function PartyLedgerTable() {
             <Button variant="outline" onClick={() => setOpenDelete(false)}>
               Cancel
             </Button>
-            <Button variant="destructive">Delete</Button>
+            <Button variant="outline">Delete</Button>
           </div>
         </DialogContent>
       </Dialog>

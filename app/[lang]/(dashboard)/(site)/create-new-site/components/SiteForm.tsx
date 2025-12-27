@@ -122,7 +122,7 @@ export default function SiteForm() {
                 {["Cement", "Metal", "Sand", "Labour", "Royalty", "Over Head"].map(
                   (item) => (
                     <tr key={item} className="hover:bg-default-50">
-                      <td classnumber="p-3 font-medium">{item}</td>
+                      <td className="p-3 font-medium">{item}</td>
                       <td className="p-3">
                         <Input placeholder="Amount" />
                       </td>
@@ -174,7 +174,7 @@ export default function SiteForm() {
 
         <Button className="px-10">Save</Button>
 
-        <Button variant="secondary" className="px-10">
+        <Button variant="outline" className="px-10">
           Update
         </Button>
 

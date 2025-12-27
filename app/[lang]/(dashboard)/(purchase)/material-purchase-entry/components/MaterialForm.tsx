@@ -241,7 +241,7 @@ export default function MaterialForm() {
           <Button className="px-8" disabled={saveDisabled}>
             Save
           </Button>
-          <Button variant="secondary" className="px-8">
+          <Button variant="outline" className="px-8">
             Update
           </Button>
           <Button variant="outline" className="px-8">
