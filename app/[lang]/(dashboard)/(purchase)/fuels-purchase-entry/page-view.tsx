@@ -24,7 +24,7 @@ export default function PageView({ trans }: Props) {
         </h3> */}
 
         {/* Inject the Form Component */}
-        <FuelPurchaseForm />
+        <FuelPurchaseForm station="-" onClose={() => {}} />
 
       </div>
     </div>
