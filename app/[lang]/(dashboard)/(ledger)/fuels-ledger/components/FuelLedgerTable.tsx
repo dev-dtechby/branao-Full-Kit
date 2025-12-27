@@ -289,7 +289,7 @@ export default function FuelLedgerTable() {
 
                         <Button
                           size="icon"
-                          variant="destructive"
+                          variant="outline"
                           onClick={() => setDeleteItem(row)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -390,7 +390,7 @@ export default function FuelLedgerTable() {
             </Button>
 
             <Button
-              variant="destructive"
+              variant="outline"
               onClick={() => {
                 setDeleteItem(null);
                 alert("Deleted Successfully");
