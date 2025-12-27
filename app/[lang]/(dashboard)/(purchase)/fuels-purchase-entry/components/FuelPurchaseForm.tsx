@@ -10,14 +10,26 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 
-export default function FuelPurchaseForm() {
+/* ============================
+   REQUIRED PROPS INTERFACE
+=============================== */
+interface FuelPurchaseFormProps {
+  station: string;          // selectedStation
+  onClose: () => void;      // function to close popup
+}
+
+export default function FuelPurchaseForm({
+  station,
+  onClose,
+}: FuelPurchaseFormProps) {
+
   const [date, setDate] = useState<Date | undefined>(new Date());
 
   return (
     <Card className="p-6 shadow-sm border rounded-xl">
       <CardHeader>
         <CardTitle className="text-xl font-semibold text-default-900">
-          Fuel Purchase Entry
+          Fuel Purchase Entry — {station}
         </CardTitle>
       </CardHeader>
 
@@ -128,22 +140,30 @@ export default function FuelPurchaseForm() {
         </div>
 
         {/* ===================== RECEIPT UPLOAD ===================== */}
-        <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-          
-          <div className="space-y-1">
-            <Label>Upload Receipt Photo</Label>
-            <Button variant="outline" className="flex gap-2 w-full">
-              <Upload className="h-4 w-4" />
-              Upload
-            </Button>
-          </div>
+        <div className="space-y-1">
+          <Label>Upload Receipt Photo</Label>
+          <Button variant="outline" className="flex gap-2 w-full">
+            <Upload className="h-4 w-4" />
+            Upload
+          </Button>
         </div>
 
         {/* ===================== ACTION BUTTONS ===================== */}
         <div className="flex gap-4 flex-wrap pt-4">
           <Button className="px-8">Save</Button>
-          <Button variant="secondary" className="px-8">Update</Button>
-          <Button variant="outline" className="px-8">Reset</Button>
+          <Button variant="outline" className="px-8">Update</Button>
+
+          <Button variant="outline" className="px-8">
+            Reset
+          </Button>
+
+          <Button 
+            variant="outline" 
+            className="px-8 text-red-500 border-red-500 hover:bg-red-50"
+            onClick={onClose}
+          >
+            Close
+          </Button>
         </div>
 
       </CardContent>

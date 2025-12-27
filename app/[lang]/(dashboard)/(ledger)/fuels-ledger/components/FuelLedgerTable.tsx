@@ -343,7 +343,7 @@ export default function FuelLedgerTable() {
             <div className="space-y-2">
               {Object.entries(openViewPopup).map(([key, val]) => (
                 <p key={key} className="text-sm">
-                  <strong>{key}:</strong> {val || "-"}
+                  <strong>{key}:</strong> {String(val ?? "-")}
                 </p>
               ))}
             </div>
@@ -363,7 +363,7 @@ export default function FuelLedgerTable() {
               {Object.entries(openEditPopup).map(([key, val]) => (
                 <div key={key}>
                   <label className="text-sm font-medium">{key}</label>
-                  <Input defaultValue={val} className="mt-1" />
+                  <Input defaultValue={String(val ?? "")} className="mt-1" />
                 </div>
               ))}
 
