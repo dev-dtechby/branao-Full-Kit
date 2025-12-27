@@ -103,7 +103,7 @@ export default function LedgerForm() {
           <div className="flex flex-wrap gap-3 pt-4">
             <Button className="px-6">Save</Button>
 
-            <Button variant="secondary" className="px-6">
+            <Button variant="outline" className="px-6">
               Update
             </Button>
 
@@ -170,7 +170,7 @@ export default function LedgerForm() {
           <div className="flex flex-wrap gap-3 pt-4">
             <Button className="px-6">Save</Button>
 
-            <Button variant="secondary" className="px-6">
+            <Button variant="outline" className="px-6">
               Update
             </Button>
 
