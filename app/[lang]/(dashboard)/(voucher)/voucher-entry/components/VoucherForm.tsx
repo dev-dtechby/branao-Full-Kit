@@ -119,7 +119,7 @@ export default function VoucherForm() {
         {/* ===================== ACTION BUTTONS ===================== */}
         <div className="flex flex-wrap gap-4 pt-6">
           <Button className="px-10">Save</Button>
-          <Button variant="secondary" className="px-10">
+          <Button variant="soft" className="px-10">
             Update
           </Button>
           <Button variant="outline" className="px-10">
