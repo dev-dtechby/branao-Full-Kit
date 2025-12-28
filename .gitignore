@@ -35,3 +35,13 @@ yarn-error.log*
 .contentlayer
 tsconfig.tsbuildinfo
 /.contentlayer/
+# ===== Backend (Branao ERP) =====
+branao-backend/node_modules/
+branao-backend/.env
+
+# Prisma
+branao-backend/prisma/*.db
+branao-backend/prisma/migrations/
+
+# Backend build (if any)
+branao-backend/dist/

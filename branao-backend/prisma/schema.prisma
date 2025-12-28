@@ -1,1 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
 
+datasource db {
+  provider = "mysql"
+}
+
+enum DocumentType {
+  SD
+  WORK_ORDER
+  TENDER
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sites Site[]
+}
+
+model Site {
+  id           String      @id @default(cuid())
+  siteName     String
+  tenderNo     String?
+  sdAmount     Decimal?    @db.Decimal(18,2)
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  estimate     SiteEstimate?
+  documents    SiteDocument[]
+
+  isDeleted    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([departmentId])
+  @@index([isDeleted])
+}
+
+model SiteEstimate {
+  id        String   @id @default(cuid())
+  siteId    String   @unique
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  // Concrete
+  cement    Decimal? @db.Decimal(18,2)
+  metal     Decimal? @db.Decimal(18,2)
+  sand      Decimal? @db.Decimal(18,2)
+  labour    Decimal? @db.Decimal(18,2)
+  royalty   Decimal? @db.Decimal(18,2)
+  overhead  Decimal? @db.Decimal(18,2)
+
+  // CNS
+  lead              Decimal? @db.Decimal(18,2)
+  dressing          Decimal? @db.Decimal(18,2)
+  waterCompaction   Decimal? @db.Decimal(18,2)
+  loading           Decimal? @db.Decimal(18,2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SiteDocument {
+  id           String       @id @default(cuid())
+  siteId       String
+  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  type         DocumentType
+  url          String?
+  secureUrl    String
+  publicId     String
+  resourceType String
+  bytes        Int?
+  format       String?
+  originalName String?
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([siteId, type])
+  // SD/WORK_ORDER ko unique rakhne ke liye (TENDER multiple allowed)
+  @@unique([siteId, type], map: "uniq_site_single_docs")
+}
