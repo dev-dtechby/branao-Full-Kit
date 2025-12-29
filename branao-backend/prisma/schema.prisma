@@ -4,36 +4,46 @@ generator client {
 
 datasource db {
   provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
+/* ================= ENUM ================= */
 enum DocumentType {
   SD
   WORK_ORDER
   TENDER
 }
 
+/* ================= DEPARTMENT =================
+   ✔ Master table
+   ✔ Will be seeded (WRD, PHED, JJM, CGMSC)
+================================================ */
 model Department {
   id        String   @id @default(cuid())
   name      String   @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sites Site[]
+  sites     Site[]
 }
 
+/* ================= SITE ================= */
 model Site {
   id           String      @id @default(cuid())
   siteName     String
   tenderNo     String?
   sdAmount     Decimal?    @db.Decimal(18,2)
 
+  // 🔑 Department relation (optional but FK-safe)
   departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   estimate     SiteEstimate?
   documents    SiteDocument[]
 
   isDeleted    Boolean     @default(false)
+
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -41,6 +51,10 @@ model Site {
   @@index([isDeleted])
 }
 
+/* ================= SITE ESTIMATE =================
+   ✔ One-to-one with Site
+   ✔ Cascades on Site delete
+================================================ */
 model SiteEstimate {
   id        String   @id @default(cuid())
   siteId    String   @unique
@@ -64,6 +78,11 @@ model SiteEstimate {
   updatedAt DateTime @updatedAt
 }
 
+/* ================= SITE DOCUMENT =================
+   ✔ Cloudinary-based storage
+   ✔ SD & WORK_ORDER unique per site
+   ✔ TENDER multiple allowed
+================================================ */
 model SiteDocument {
   id           String       @id @default(cuid())
   siteId       String
@@ -82,6 +101,5 @@ model SiteDocument {
   updatedAt    DateTime     @updatedAt
 
   @@index([siteId, type])
-  // SD/WORK_ORDER ko unique rakhne ke liye (TENDER multiple allowed)
   @@unique([siteId, type], map: "uniq_site_single_docs")
 }

@@ -1,188 +1,255 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { UploadCloud } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import { Plus, X } from "lucide-react";
 
+/* ================= TYPES ================= */
+interface Department {
+  id: string;
+  name: string;
+}
+
+/* ================= COMPONENT ================= */
 export default function SiteForm() {
+  /* ================= BASIC ================= */
   const [siteName, setSiteName] = useState("");
+  const [tenderNo, setTenderNo] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [sdAmount, setSdAmount] = useState("");
 
+  /* ================= FILE STATES ================= */
+  const [sdFile, setSdFile] = useState<File | null>(null);
+  const [workOrderFile, setWorkOrderFile] = useState<File | null>(null);
+  const [tenderDocs, setTenderDocs] = useState<File[]>([]);
+
+  /* ================= FILE REFS (IMPORTANT) ================= */
+  const sdFileRef = useRef<HTMLInputElement>(null);
+  const workOrderFileRef = useRef<HTMLInputElement>(null);
+  const tenderDocsRef = useRef<HTMLInputElement>(null);
+
+  /* ================= ESTIMATE ================= */
+  const [estimate, setEstimate] = useState<Record<string, string>>({});
+
+  /* ================= DEPARTMENT ================= */
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [showDeptModal, setShowDeptModal] = useState(false);
+
+  /* ================= UX ================= */
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  /* ================= API ================= */
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
+  const SITE_API = `${API_BASE_URL}/sites`;
+  const DEPT_API = `${API_BASE_URL}/departments`;
+
+  /* ================= LOAD DEPARTMENTS ================= */
+  const loadDepartments = async () => {
+    try {
+      const res = await fetch(DEPT_API);
+      const json = await res.json();
+      setDepartments(json.data || []);
+    } catch {
+      toast({ title: "❌ Failed to load departments" });
+    }
+  };
+
+  useEffect(() => {
+    loadDepartments();
+  }, []);
+
+  /* ================= HELPERS ================= */
+  const handleEstimateChange = (key: string, value: string) => {
+    setEstimate(prev => ({ ...prev, [key]: value }));
+  };
+
+  const buildFormData = () => {
+    const fd = new FormData();
+
+    fd.append("siteName", siteName);
+    fd.append("tenderNo", tenderNo);
+    fd.append("sdAmount", sdAmount);
+    if (departmentId) fd.append("departmentId", departmentId);
+
+    fd.append("cement", estimate["Cement"] || "");
+    fd.append("metal", estimate["Metal"] || "");
+    fd.append("sand", estimate["Sand"] || "");
+    fd.append("labour", estimate["Labour"] || "");
+    fd.append("royalty", estimate["Royalty"] || "");
+    fd.append("overhead", estimate["Over Head"] || "");
+    fd.append("lead", estimate["Lead"] || "");
+    fd.append("dressing", estimate["Dressing"] || "");
+    fd.append("waterCompaction", estimate["Water & Compaction"] || "");
+    fd.append("loading", estimate["Loading"] || "");
+
+    if (sdFile) fd.append("sdFile", sdFile);
+    if (workOrderFile) fd.append("workOrderFile", workOrderFile);
+    tenderDocs.forEach(f => fd.append("tenderDocs", f));
+
+    return fd;
+  };
+
+  /* ================= RESET FORM ================= */
+  const resetForm = () => {
+    setSiteName("");
+    setTenderNo("");
+    setDepartmentId("");
+    setSdAmount("");
+    setEstimate({});
+    setSdFile(null);
+    setWorkOrderFile(null);
+    setTenderDocs([]);
+
+    // 🔥 RESET FILE INPUTS
+    if (sdFileRef.current) sdFileRef.current.value = "";
+    if (workOrderFileRef.current) workOrderFileRef.current.value = "";
+    if (tenderDocsRef.current) tenderDocsRef.current.value = "";
+  };
+
+  /* ================= SAVE ================= */
+  const handleSave = async () => {
+    if (!siteName) {
+      toast({ title: "❌ Site Name is required" });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const res = await fetch(SITE_API, {
+        method: "POST",
+        body: buildFormData(),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed");
+
+      toast({ title: "✅ Site Created Successfully" });
+
+      resetForm(); // 🔥 FULL RESET
+    } catch (e: any) {
+      toast({ title: "❌ Error", description: e.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ================= UI ================= */
   return (
-    <Card className="p-6 md:p-8 shadow-md border rounded-xl space-y-8">
+    <>
+      <Card className="p-6 space-y-8">
+        <h2 className="text-2xl font-semibold">Create New Site</h2>
 
-      {/* ========================================================= */}
-      {/*                       TITLE                               */}
-      {/* ========================================================= */}
-      <h2 className="text-2xl font-semibold text-default-900">
-        Create New Site
-      </h2>
+        {/* BASIC */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div>
+            <Label>Site Name</Label>
+            <Input value={siteName} onChange={e => setSiteName(e.target.value)} />
+          </div>
 
+          <div>
+            <Label>Tender No</Label>
+            <Input value={tenderNo} onChange={e => setTenderNo(e.target.value)} />
+          </div>
 
-      {/* ========================================================= */}
-      {/*                SITE + TENDER + DEPARTMENT                 */}
-      {/* ========================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div>
+            <Label>Department</Label>
+            <div className="flex gap-2">
+              <select
+                className="w-full border rounded-md px-3 py-2"
+                value={departmentId}
+                onChange={e => setDepartmentId(e.target.value)}
+              >
+                <option value="">Select</option>
+                {departments.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
 
-        {/* Site Name */}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">Site Name</Label>
-          <Input placeholder="Enter site name" />
-        </div>
-
-        {/* Tender No */}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">Tender No</Label>
-          <Input placeholder="Tender number" />
-        </div>
-
-        {/* Department */}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">Department</Label>
-          <select className="w-full border rounded-md px-3 py-2 bg-background">
-            <option>Select Department</option>
-            <option>Water Resource</option>
-            <option>PHED</option>
-            <option>Municipal</option>
-          </select>
-        </div>
-
-      </div>
-
-
-
-
-      {/* ========================================================= */}
-      {/*                     SD AMOUNT + WORK ORDER                */}
-      {/* ========================================================= */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
-        {/* SD Amount */}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">SD Amount</Label>
-          <Input placeholder="Enter SD amount" />
-        </div>
-
-        {/* Upload SD */}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">Upload SD</Label>
-          <div className="flex items-center gap-2 border rounded-md px-3 py-2 cursor-pointer">
-            <UploadCloud className="h-4 w-4" />
-            <span className="text-sm">Upload File</span>
+              <Button variant="outline" size="icon" onClick={() => setShowDeptModal(true)}>
+                <Plus size={16} />
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Upload Work Order */}
-        <div className="space-y-1">
-          <Label className="text-sm font-medium">Upload Work Order</Label>
-          <div className="flex items-center gap-2 border rounded-md px-3 py-2 cursor-pointer">
-            <UploadCloud className="h-4 w-4" />
-            <span className="text-sm">Upload File</span>
+        {/* FILES */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div>
+            <Label>SD Amount</Label>
+            <Input value={sdAmount} onChange={e => setSdAmount(e.target.value)} />
+          </div>
+
+          <div>
+            <Label>Upload SD</Label>
+            <Input ref={sdFileRef} type="file" onChange={e => setSdFile(e.target.files?.[0] || null)} />
+          </div>
+
+          <div>
+            <Label>Upload Work Order</Label>
+            <Input ref={workOrderFileRef} type="file" onChange={e => setWorkOrderFile(e.target.files?.[0] || null)} />
           </div>
         </div>
 
-      </div>
-
-
-
-      {/* ========================================================= */}
-      {/*             UPLOAD TENDER DOCUMENTS SECTION               */}
-      {/* ========================================================= */}
-      <div className="space-y-1">
-        <Label className="text-sm font-medium">All Tender Documents Upload</Label>
-        <div className="flex items-center gap-2 border rounded-md px-3 py-2 cursor-pointer">
-          <UploadCloud className="h-4 w-4" />
-          <span className="text-sm">Upload All Documents</span>
+        <div>
+          <Label>All Tender Documents</Label>
+          <Input
+            ref={tenderDocsRef}
+            type="file"
+            multiple
+            onChange={e => setTenderDocs(Array.from(e.target.files || []))}
+          />
         </div>
-      </div>
 
+        {/* ESTIMATE */}
+        <h3 className="text-xl font-semibold">Estimate</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            "Cement","Metal","Sand","Labour","Royalty","Over Head",
+            "Lead","Dressing","Water & Compaction","Loading"
+          ].map(item => (
+            <Input
+              key={item}
+              placeholder={item}
+              value={estimate[item] || ""}
+              onChange={e => handleEstimateChange(item, e.target.value)}
+            />
+          ))}
+        </div>
 
+        {/* ACTION BUTTONS */}
+        <div className="flex justify-center gap-4">
+          <Button onClick={handleSave} disabled={loading}>
+            {loading ? "Saving..." : "Save"}
+          </Button>
 
+          <Button variant="outline" type="button" onClick={resetForm}>
+            Reset
+          </Button>
+        </div>
+      </Card>
 
-      {/* ========================================================= */}
-      {/*                        ESTIMATE                           */}
-      {/* ========================================================= */}
-      <h3 className="text-xl font-semibold text-default-800">Estimate</h3>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-
-        {/* ------------------ Concrete Table ------------------ */}
-        <Card className="p-4 border rounded-lg shadow-sm">
-          <h4 className="text-lg font-semibold mb-4 text-default-900">
-            Concrete
-          </h4>
-
-          <ScrollArea className="h-auto">
-            <table className="w-full text-sm border-collapse">
-              <tbody className="divide-y">
-
-                {["Cement", "Metal", "Sand", "Labour", "Royalty", "Over Head"].map(
-                  (item) => (
-                    <tr key={item} className="hover:bg-default-50">
-                      <td className="p-3 font-medium">{item}</td>
-                      <td className="p-3">
-                        <Input placeholder="Amount" />
-                      </td>
-                    </tr>
-                  )
-                )}
-
-              </tbody>
-            </table>
-          </ScrollArea>
-        </Card>
-
-
-
-        {/* -------------------- CNS Table -------------------- */}
-        <Card className="p-4 border rounded-lg shadow-sm">
-          <h4 className="text-lg font-semibold mb-4 text-default-900">
-            CNS
-          </h4>
-
-          <ScrollArea className="h-auto">
-            <table className="w-full text-sm border-collapse">
-              <tbody className="divide-y">
-
-                {["Lead", "Dressing", "Water & Compaction", "Loading"].map(
-                  (item) => (
-                    <tr key={item} className="hover:bg-default-50">
-                      <td className="p-3 font-medium">{item}</td>
-                      <td className="p-3">
-                        <Input placeholder="Amount" />
-                      </td>
-                    </tr>
-                  )
-                )}
-
-              </tbody>
-            </table>
-          </ScrollArea>
-        </Card>
-
-      </div>
-
-
-
-      {/* ========================================================= */}
-      {/*                        BUTTONS                           */}
-      {/* ========================================================= */}
-      <div className="flex flex-wrap gap-4 justify-center pt-4">
-
-        <Button className="px-10">Save</Button>
-
-        <Button variant="outline" className="px-10">
-          Update
-        </Button>
-
-        <Button variant="outline" className="px-10">
-          Reset
-        </Button>
-
-      </div>
-    </Card>
+      {/* DEPARTMENT MODAL */}
+      {showDeptModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center">
+          <div className="bg-background w-[700px] h-[500px] rounded-xl relative">
+            <button
+              className="absolute right-3 top-3"
+              onClick={() => {
+                setShowDeptModal(false);
+                loadDepartments();
+              }}
+            >
+              <X />
+            </button>
+            <iframe src="/en/department" className="w-full h-full rounded-xl" />
+          </div>
+        </div>
+      )}
+    </>
   );
 }

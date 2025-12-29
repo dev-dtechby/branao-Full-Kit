@@ -1,49 +1,107 @@
 import { Request, Response } from "express";
-import SiteService from "./site.service";
+import {
+  createSite,
+  getSiteById,
+  updateSite,
+} from "./site.service";
+import { SiteRequest } from "./site.types";
 
-export default {
-  async createSite(req: Request, res: Response) {
-    try {
-      const site = await SiteService.createSite(req.body);
-      res.json({ success: true, site });
-    } catch (err:any) {
-      res.status(400).json({ success: false, message: err.message });
-    }
-  },
+/* =====================================================
+   CREATE SITE  ✅
+===================================================== */
+export const createSiteHandler = async (
+  req: SiteRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const site = await createSite(req.body, req.files);
 
-  async getSites(req: Request, res: Response) {
-    try {
-      const sites = await SiteService.getSites();
-      res.json({ success: true, sites });
-    } catch (err:any) {
-      res.status(500).json({ success: false, message: err.message });
-    }
-  },
+    res.status(201).json({
+      success: true,
+      data: site,
+    });
+  } catch (error) {
+    console.error("❌ Site Create Error:", error);
 
-  async getSiteById(req: Request, res: Response) {
-    try {
-      const site = await SiteService.getSiteById(Number(req.params.id));
-      res.json({ success: true, site });
-    } catch (err:any) {
-      res.status(404).json({ success: false, message: err.message });
-    }
-  },
+    res.status(500).json({
+      success: false,
+      message: "Site create failed",
+    });
+  }
+};
 
-  async updateSite(req: Request, res: Response) {
-    try {
-      const site = await SiteService.updateSite(Number(req.params.id), req.body);
-      res.json({ success: true, site });
-    } catch (err:any) {
-      res.status(400).json({ success: false, message: err.message });
-    }
-  },
+/* =====================================================
+   GET SITE BY ID  ✅ (EDIT FORM LOAD)
+===================================================== */
+export const getSiteByIdHandler = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
 
-  async removeSite(req: Request, res: Response) {
-    try {
-      await SiteService.removeSite(Number(req.params.id));
-      res.json({ success: true, message: "Site removed successfully" });
-    } catch (err:any) {
-      res.status(400).json({ success: false, message: err.message });
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        message: "Site ID is required",
+      });
+      return;
     }
-  },
+
+    const site = await getSiteById(id);
+
+    if (!site) {
+      res.status(404).json({
+        success: false,
+        message: "Site not found",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: site,
+    });
+  } catch (error) {
+    console.error("❌ Get Site By ID Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch site",
+    });
+  }
+};
+
+/* =====================================================
+   UPDATE SITE  ✅ (EDIT SAVE)
+===================================================== */
+export const updateSiteHandler = async (
+  req: SiteRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      res.status(400).json({
+        success: false,
+        message: "Site ID is required",
+      });
+      return;
+    }
+
+    await updateSite(id, req.body, req.files);
+
+    res.status(200).json({
+      success: true,
+      message: "Site updated successfully",
+    });
+  } catch (error) {
+    console.error("❌ Site Update Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Site update failed",
+    });
+  }
 };
