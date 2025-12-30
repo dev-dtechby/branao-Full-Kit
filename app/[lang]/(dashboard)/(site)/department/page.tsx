@@ -18,15 +18,29 @@ export default function DepartmentPage() {
 
   const { toast } = useToast();
 
-  const API =process.env.NEXT_PUBLIC_API_BASE_URL + "/api/departments";
+  /* =================================================
+     API BASE (SAFE FOR LOCAL + PROD)
+     ================================================= */
+  const BASE_URL =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+  const API = `${BASE_URL}/api/departments`;
 
   /* ================= LOAD ================= */
   const load = async () => {
     try {
-      const res = await fetch(API);
+      const res = await fetch(API, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch departments");
+      }
+
       const json = await res.json();
-      setList(json.data || []);
-    } catch {
+      setList(json?.data ?? []);
+    } catch (err) {
+      console.error("Department Load Error:", err);
       toast({
         title: "❌ Error",
         description: "Failed to load departments",
@@ -48,11 +62,15 @@ export default function DepartmentPage() {
       const res = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        credentials: "include",
+        body: JSON.stringify({ name: name.trim() }),
       });
 
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Add failed");
+
+      if (!res.ok) {
+        throw new Error(json?.message || "Add failed");
+      }
 
       toast({
         title: "✅ Department Added",
@@ -62,9 +80,10 @@ export default function DepartmentPage() {
       setName("");
       load();
 
-      // 🔥 notify parent SiteForm (iframe use-case)
+      // notify parent (site form)
       window.parent.postMessage("DEPT_ADDED", "*");
     } catch (err: any) {
+      console.error("Department Add Error:", err);
       toast({
         title: "❌ Error",
         description: err.message,
@@ -79,7 +98,14 @@ export default function DepartmentPage() {
     if (!confirm("Are you sure you want to delete this department?")) return;
 
     try {
-      await fetch(`${API}/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API}/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Delete failed");
+      }
 
       toast({
         title: "🗑️ Deleted",
@@ -87,10 +113,9 @@ export default function DepartmentPage() {
       });
 
       load();
-
-      // refresh parent dropdown
       window.parent.postMessage("DEPT_ADDED", "*");
-    } catch {
+    } catch (err) {
+      console.error("Department Delete Error:", err);
       toast({
         title: "❌ Error",
         description: "Delete failed",
@@ -108,7 +133,7 @@ export default function DepartmentPage() {
         <Input
           placeholder="Department Name"
           value={name}
-          onChange={e => setName(e.target.value)}
+          onChange={(e) => setName(e.target.value)}
         />
         <Button onClick={add} disabled={loading}>
           {loading ? "Adding..." : "Add"}
@@ -127,13 +152,16 @@ export default function DepartmentPage() {
           <tbody>
             {list.length === 0 && (
               <tr>
-                <td colSpan={2} className="p-4 text-center text-muted-foreground">
+                <td
+                  colSpan={2}
+                  className="p-4 text-center text-muted-foreground"
+                >
                   No departments added yet
                 </td>
               </tr>
             )}
 
-            {list.map(d => (
+            {list.map((d) => (
               <tr key={d.id} className="border-t">
                 <td className="p-2">{d.name}</td>
                 <td className="p-2 text-center">

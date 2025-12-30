@@ -27,7 +27,7 @@ export default function SiteForm() {
   const [workOrderFile, setWorkOrderFile] = useState<File | null>(null);
   const [tenderDocs, setTenderDocs] = useState<File[]>([]);
 
-  /* ================= FILE REFS (IMPORTANT) ================= */
+  /* ================= FILE REFS ================= */
   const sdFileRef = useRef<HTMLInputElement>(null);
   const workOrderFileRef = useRef<HTMLInputElement>(null);
   const tenderDocsRef = useRef<HTMLInputElement>(null);
@@ -43,24 +43,42 @@ export default function SiteForm() {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  /* ================= API ================= */
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
-  const SITE_API = `${API_BASE_URL}/sites`;
-  const DEPT_API = `${API_BASE_URL}/departments`;
+  /* ================= API (SAFE) ================= */
+  const BASE_URL =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+  const SITE_API = `${BASE_URL}/api/sites`;
+  const DEPT_API = `${BASE_URL}/api/departments`;
 
   /* ================= LOAD DEPARTMENTS ================= */
   const loadDepartments = async () => {
     try {
       const res = await fetch(DEPT_API);
+      if (!res.ok) throw new Error("Fetch failed");
+
       const json = await res.json();
-      setDepartments(json.data || []);
-    } catch {
-      toast({ title: "❌ Failed to load departments" });
+      setDepartments(json?.data ?? []);
+    } catch (err) {
+      console.error("Department load error", err);
+      toast({
+        title: "❌ Error",
+        description: "Failed to load departments",
+      });
     }
   };
 
   useEffect(() => {
     loadDepartments();
+
+    // 🔥 Listen message from Department modal
+    const listener = (e: MessageEvent) => {
+      if (e.data === "DEPT_ADDED") {
+        loadDepartments();
+      }
+    };
+    window.addEventListener("message", listener);
+
+    return () => window.removeEventListener("message", listener);
   }, []);
 
   /* ================= HELPERS ================= */
@@ -94,7 +112,7 @@ export default function SiteForm() {
     return fd;
   };
 
-  /* ================= RESET FORM ================= */
+  /* ================= RESET ================= */
   const resetForm = () => {
     setSiteName("");
     setTenderNo("");
@@ -105,7 +123,6 @@ export default function SiteForm() {
     setWorkOrderFile(null);
     setTenderDocs([]);
 
-    // 🔥 RESET FILE INPUTS
     if (sdFileRef.current) sdFileRef.current.value = "";
     if (workOrderFileRef.current) workOrderFileRef.current.value = "";
     if (tenderDocsRef.current) tenderDocsRef.current.value = "";
@@ -129,8 +146,7 @@ export default function SiteForm() {
       if (!res.ok) throw new Error(json.message || "Failed");
 
       toast({ title: "✅ Site Created Successfully" });
-
-      resetForm(); // 🔥 FULL RESET
+      resetForm();
     } catch (e: any) {
       toast({ title: "❌ Error", description: e.message });
     } finally {
@@ -166,11 +182,18 @@ export default function SiteForm() {
               >
                 <option value="">Select</option>
                 {departments.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
                 ))}
               </select>
 
-              <Button variant="outline" size="icon" onClick={() => setShowDeptModal(true)}>
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                onClick={() => setShowDeptModal(true)}
+              >
                 <Plus size={16} />
               </Button>
             </div>
@@ -186,12 +209,20 @@ export default function SiteForm() {
 
           <div>
             <Label>Upload SD</Label>
-            <Input ref={sdFileRef} type="file" onChange={e => setSdFile(e.target.files?.[0] || null)} />
+            <Input
+              ref={sdFileRef}
+              type="file"
+              onChange={e => setSdFile(e.target.files?.[0] || null)}
+            />
           </div>
 
           <div>
             <Label>Upload Work Order</Label>
-            <Input ref={workOrderFileRef} type="file" onChange={e => setWorkOrderFile(e.target.files?.[0] || null)} />
+            <Input
+              ref={workOrderFileRef}
+              type="file"
+              onChange={e => setWorkOrderFile(e.target.files?.[0] || null)}
+            />
           </div>
         </div>
 
@@ -209,8 +240,16 @@ export default function SiteForm() {
         <h3 className="text-xl font-semibold">Estimate</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            "Cement","Metal","Sand","Labour","Royalty","Over Head",
-            "Lead","Dressing","Water & Compaction","Loading"
+            "Cement",
+            "Metal",
+            "Sand",
+            "Labour",
+            "Royalty",
+            "Over Head",
+            "Lead",
+            "Dressing",
+            "Water & Compaction",
+            "Loading",
           ].map(item => (
             <Input
               key={item}
@@ -221,7 +260,7 @@ export default function SiteForm() {
           ))}
         </div>
 
-        {/* ACTION BUTTONS */}
+        {/* ACTION */}
         <div className="flex justify-center gap-4">
           <Button onClick={handleSave} disabled={loading}>
             {loading ? "Saving..." : "Save"}
@@ -246,7 +285,10 @@ export default function SiteForm() {
             >
               <X />
             </button>
-            <iframe src="/en/department" className="w-full h-full rounded-xl" />
+            <iframe
+              src="/en/department"
+              className="w-full h-full rounded-xl"
+            />
           </div>
         </div>
       )}

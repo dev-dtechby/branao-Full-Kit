@@ -24,30 +24,6 @@ interface SiteDocument {
   originalName?: string | null;
 }
 
-interface SiteData {
-  siteName: string;
-  tenderNo?: string | null;
-  sdAmount?: number | null;
-  department?: {
-    id: string;
-    name: string;
-  } | null;
-
-  // 🔥 DIRECT DOCUMENTS (NO "documents" OBJECT)
-  sdFile?: SiteDocument | null;
-  workOrderFile?: SiteDocument | null;
-  tenderDocs?: SiteDocument[];
-
-  estimates?: Record<string, string>;
-}
-
-
-
-/* ================= ENV CONFIG ================= */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
-const SITE_API = `${API_BASE_URL}/sites`;
-const DEPT_API = `${API_BASE_URL}/departments`;
-
 /* ================= COMPONENT ================= */
 export default function EditSiteForm({ siteId }: { siteId: string }) {
   const router = useRouter();
@@ -79,14 +55,27 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
   /* ================= UX ================= */
   const [loading, setLoading] = useState(false);
 
+  /* ================= API (SAFE) ================= */
+  const BASE_URL =
+    process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+  const SITE_API = `${BASE_URL}/api/sites`;
+  const DEPT_API = `${BASE_URL}/api/departments`;
+
   /* ================= LOAD DEPARTMENTS ================= */
   const loadDepartments = async () => {
-    const res = await fetch(DEPT_API);
-    const json = await res.json();
-    setDepartments(json.data || []);
+    try {
+      const res = await fetch(DEPT_API);
+      if (!res.ok) throw new Error("Department fetch failed");
+
+      const json = await res.json();
+      setDepartments(json?.data ?? []);
+    } catch {
+      toast({ title: "❌ Failed to load departments" });
+    }
   };
 
-  /* ================= LOAD SITE DATA ================= */
+  /* ================= LOAD SITE ================= */
   const loadSite = async () => {
     try {
       const res = await fetch(`${SITE_API}/${siteId}`);
@@ -96,14 +85,7 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
         throw new Error(json?.message || "Fetch failed");
       }
 
-      // 🔥 VERY IMPORTANT: backend may or may not wrap in `data`
-      const data: any = json.data ?? json;
-
-      if (!data) {
-        throw new Error("Site data not found");
-      }
-
-      console.log("EDIT SITE NORMALIZED DATA =", data);
+      const data = json.data ?? json;
 
       // BASIC
       setSiteName(data.siteName || "");
@@ -131,16 +113,13 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
         setEstimate({});
       }
 
-
-      // DOCUMENTS (handle BOTH shapes)
+      /* DOCUMENTS (handle both backend shapes) */
       const docs: SiteDocument[] = [];
 
-      // shape A (preferred)
       if (data.sdFile) docs.push(data.sdFile);
       if (data.workOrderFile) docs.push(data.workOrderFile);
       if (data.tenderDocs?.length) docs.push(...data.tenderDocs);
 
-      // shape B (fallback: documents array)
       if (!docs.length && Array.isArray(data.documents)) {
         docs.push(...data.documents);
       }
@@ -152,16 +131,12 @@ export default function EditSiteForm({ siteId }: { siteId: string }) {
     }
   };
 
-
-
-
-useEffect(() => {
-  if (siteId) {
-    loadDepartments();
-    loadSite();
-  }
-}, [siteId]);
-
+  useEffect(() => {
+    if (siteId) {
+      loadDepartments();
+      loadSite();
+    }
+  }, [siteId]);
 
   /* ================= HELPERS ================= */
   const handleEstimateChange = (k: string, v: string) => {
@@ -213,7 +188,8 @@ useEffect(() => {
         body: buildFormData(),
       });
 
-      if (!res.ok) throw new Error("Update failed");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Update failed");
 
       toast({ title: "✅ Site Updated Successfully" });
       router.push("/en/all-site-list");
@@ -250,7 +226,9 @@ useEffect(() => {
           >
             <option value="">Select</option>
             {departments.map(d => (
-              <option key={d.id} value={d.id}>{d.name}</option>
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
             ))}
           </select>
         </div>
@@ -265,22 +243,32 @@ useEffect(() => {
 
         <div>
           <Label>Replace SD</Label>
-          <Input ref={sdFileRef} type="file" onChange={e => setSdFile(e.target.files?.[0] || null)} />
+          <Input
+            ref={sdFileRef}
+            type="file"
+            onChange={e => setSdFile(e.target.files?.[0] || null)}
+          />
         </div>
 
         <div>
           <Label>Replace Work Order</Label>
-          <Input ref={workOrderFileRef} type="file" onChange={e => setWorkOrderFile(e.target.files?.[0] || null)} />
+          <Input
+            ref={workOrderFileRef}
+            type="file"
+            onChange={e => setWorkOrderFile(e.target.files?.[0] || null)}
+          />
         </div>
       </div>
 
-      {/* EXISTING DOCUMENTS */}
+      {/* EXISTING DOCS */}
       {existingDocs.length > 0 && (
         <div className="space-y-2">
           <Label>Existing Documents</Label>
           {existingDocs.map(doc => (
             <div key={doc.id} className="flex items-center gap-3">
-              <span className="text-sm">{doc.originalName || doc.type}</span>
+              <span className="text-sm">
+                {doc.originalName || doc.type}
+              </span>
               <Button
                 size="icon"
                 variant="outline"
@@ -316,8 +304,16 @@ useEffect(() => {
       <h3 className="text-xl font-semibold">Estimate</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[
-          "Cement","Metal","Sand","Labour","Royalty","Over Head",
-          "Lead","Dressing","Water & Compaction","Loading"
+          "Cement",
+          "Metal",
+          "Sand",
+          "Labour",
+          "Royalty",
+          "Over Head",
+          "Lead",
+          "Dressing",
+          "Water & Compaction",
+          "Loading",
         ].map(item => (
           <Input
             key={item}

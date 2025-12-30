@@ -39,9 +39,11 @@ interface Site {
   tenderDocs?: SiteDocument[];
 }
 
-/* ================= CONFIG ================= */
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
-const API_URL = API_BASE_URL ? `${API_BASE_URL}/sites` : null;
+/* ================= API CONFIG (FIXED) ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+const API_URL = `${BASE_URL}/api/sites`;
 
 /* ================= HELPERS ================= */
 const isImage = (url: string) =>
@@ -58,7 +60,6 @@ const getDownloadUrl = (url: string) =>
 /* ================= COMPONENT ================= */
 export default function SiteListTable() {
   const router = useRouter();
-  
   const params = useParams();
   const lang = params.lang;
 
@@ -70,12 +71,6 @@ export default function SiteListTable() {
 
   /* ================= FETCH ================= */
   const fetchSites = async () => {
-    if (!API_URL) {
-      setApiError("API base URL is not configured");
-      setLoading(false);
-      return;
-    }
-
     try {
       setLoading(true);
       setApiError(null);
@@ -83,12 +78,14 @@ export default function SiteListTable() {
       const res = await fetch(API_URL);
       const json = await res.json();
 
-      if (!res.ok) throw new Error(json?.message || "Fetch failed");
+      if (!res.ok) {
+        throw new Error(json?.message || "Route not found");
+      }
 
       setSites(json.data || []);
     } catch (err: any) {
       console.error("Fetch error:", err);
-      setApiError(err.message || "Unable to load sites");
+      setApiError(err.message || "Route not found");
       setSites([]);
     } finally {
       setLoading(false);
@@ -108,7 +105,6 @@ export default function SiteListTable() {
 
   /* ================= DELETE ================= */
   const handleDelete = async (id: string) => {
-    if (!API_URL) return;
     if (!confirm("Delete this site?")) return;
 
     const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
@@ -240,7 +236,9 @@ export default function SiteListTable() {
                             <Button
                               size="icon"
                               variant="outline"
-                              onClick={() => setPreviewDoc(s.workOrderFile!)}
+                              onClick={() =>
+                                setPreviewDoc(s.workOrderFile!)
+                              }
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -287,7 +285,9 @@ export default function SiteListTable() {
                             size="icon"
                             variant="outline"
                             onClick={() =>
-                              router.push(`/${lang}/create-new-site?id=${s.id}`)
+                              router.push(
+                                `/${lang}/create-new-site?id=${s.id}`
+                              )
                             }
                           >
                             <Pencil className="h-4 w-4" />
