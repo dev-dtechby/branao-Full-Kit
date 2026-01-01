@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Download, Edit, Trash2 } from "lucide-react";
 import SiteSummaryCards from "../../site-summary/components/SiteSummaryCards";
 import AddExp from "./AddExp";
 
-/* ========= SHADCN UI ========= */
+/* ========= SHADCN ========= */
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/* ========= EXPORT UTILS ========= */
+/* ========= EXPORT ========= */
 import {
   exportToCSV,
   exportToExcel,
@@ -65,16 +64,10 @@ export default function SiteExp() {
 
   /* ================= LOAD SITES ================= */
   useEffect(() => {
-    const loadSites = async () => {
-      try {
-        const res = await fetch(SITE_API);
-        const json = await res.json();
-        setSites(json.data || []);
-      } catch {
-        setSites([]);
-      }
-    };
-    loadSites();
+    fetch(SITE_API)
+      .then((r) => r.json())
+      .then((j) => setSites(j.data || []))
+      .catch(() => setSites([]));
   }, []);
 
   /* ================= LOAD EXPENSES ================= */
@@ -120,7 +113,7 @@ export default function SiteExp() {
     0
   );
 
-  /* ================= EXPORT DATA (WITH SITE + TOTAL) ================= */
+  /* ================= EXPORT ================= */
   const exportData = [
     ...filtered.map((row) => ({
       Site: row.site?.siteName || "N/A",
@@ -130,8 +123,7 @@ export default function SiteExp() {
       Payment: row.paymentDetails,
       Amount: row.amount,
     })),
-
-    ...(filtered.length > 0
+    ...(filtered.length
       ? [
           {
             Site: selectedSite || "All Sites",
@@ -147,202 +139,162 @@ export default function SiteExp() {
 
   return (
     <>
-      <Card className="p-6 shadow-sm border rounded-xl">
-        <CardHeader>
-          <div className="flex flex-col gap-4">
-            {/* RADIO BUTTONS */}
-            <div className="flex gap-6 items-center">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  checked={viewMode === "exp"}
-                  onChange={() => setViewMode("exp")}
-                />
-                <span className="font-medium">Site Expense Details</span>
-              </label>
+      <Card className="p-6 border rounded-xl shadow-sm">
+        <CardHeader className="space-y-4">
+          {/* MODE */}
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={viewMode === "exp"}
+                onChange={() => setViewMode("exp")}
+              />
+              <span className="font-medium">Site Expense Details</span>
+            </label>
 
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  checked={viewMode === "summary"}
-                  onChange={() => setViewMode("summary")}
-                />
-                <span className="font-medium">Summary Wise Expense</span>
-              </label>
-            </div>
-
-            {/* FILTER BAR */}
-            {viewMode === "exp" && (
-              <div className="flex flex-col md:flex-row gap-3 items-center md:justify-end w-full">
-                <Input
-                  placeholder="Search..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full md:w-56"
-                />
-
-                <select
-                  className="border bg-background px-3 py-2 rounded-md text-sm md:w-44"
-                  value={selectedSite}
-                  onChange={(e) => setSelectedSite(e.target.value)}
-                >
-                  <option value="">Select Site</option>
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.siteName}>
-                      {site.siteName}
-                    </option>
-                  ))}
-                </select>
-
-                <Button
-                  className="flex items-center gap-2 bg-primary text-white"
-                  onClick={() => setOpenAddExp(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Expense Entry
-                </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="flex items-center gap-2">
-                      <Download className="h-4 w-4" />
-                      Export
-                    </Button>
-                  </DropdownMenuTrigger>
-
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        exportToCSV(exportData, "site-expenses")
-                      }
-                    >
-                      Export as CSV
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        exportToExcel(exportData, "site-expenses")
-                      }
-                    >
-                      Export as Excel
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        exportToPDF(exportData, "site-expenses")
-                      }
-                    >
-                      Export as PDF
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={viewMode === "summary"}
+                onChange={() => setViewMode("summary")}
+              />
+              <span className="font-medium">Summary Wise Expense</span>
+            </label>
           </div>
+
+          {/* FILTER BAR */}
+          {viewMode === "exp" && (
+            <div className="flex flex-wrap gap-3 justify-end">
+              <Input
+                placeholder="Global Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full md:w-56"
+              />
+
+              <select
+                className="border bg-background px-3 py-2 rounded-md text-sm md:w-44"
+                value={selectedSite}
+                onChange={(e) => setSelectedSite(e.target.value)}
+              >
+                <option value="">Select Site</option>
+                {sites.map((s) => (
+                  <option key={s.id} value={s.siteName}>
+                    {s.siteName}
+                  </option>
+                ))}
+              </select>
+
+              <Button onClick={() => setOpenAddExp(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Expense Entry
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Download className="h-4 w-4 mr-1" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => exportToCSV(exportData, "site-expenses")}>
+                    CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportToExcel(exportData, "site-expenses")}>
+                    Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportToPDF(exportData, "site-expenses")}>
+                    PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
         </CardHeader>
 
-        {/* ================= TABLE ================= */}
+        {/* ================= TABLE (FINAL FORCE SCROLL) ================= */}
         {viewMode === "exp" && (
-          <CardContent>
-            <div className="border rounded-md">
-              <ScrollArea className="h-[360px] w-full">
-                <div className="w-max min-w-full overflow-x-auto">
-                  <table className="table-fixed w-max min-w-full">
-                    <thead className="bg-muted/40 sticky top-0 z-10">
-                      <tr>
-                        <th className="min-w-[120px] px-3 py-2">Date</th>
-                        <th className="min-w-[220px] px-3 py-2">Expenses</th>
-                        <th className="min-w-[220px] px-3 py-2">
-                          Exp. Summary
-                        </th>
-                        <th className="min-w-[220px] px-3 py-2">
-                          Payment Details
-                        </th>
-                        <th className="min-w-[120px] px-3 py-2 text-right">
-                          Amt.
-                        </th>
-                        <th className="min-w-[100px] px-3 py-2 text-center">
-                          Action
-                        </th>
+          <CardContent className="p-0">
+            {/* 🔥 INLINE CSS — NOTHING CAN BLOCK THIS */}
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "100vw",
+                overflowX: "auto",
+                overflowY: "hidden",
+              }}
+            >
+              <div style={{ minWidth: "1200px" }}>
+                <table className="w-full text-sm border-collapse">
+                  <thead className="bg-muted/60 sticky top-0 border-b">
+                    <tr className="text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-3 py-2 text-left">Date</th>
+                      <th className="px-3 py-2 text-left">Expenses</th>
+                      <th className="px-3 py-2 text-left">Exp. Summary</th>
+                      <th className="px-3 py-2 text-left">Payment</th>
+                      <th className="px-3 py-2 text-right">Amount</th>
+                      <th className="px-3 py-2 text-center">Action</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filtered.map((row) => (
+                      <tr
+                        key={row.id}
+                        className="border-t hover:bg-primary/10 transition"
+                      >
+                        <td className="px-3 py-2">
+                          {new Date(row.expenseDate).toLocaleDateString()}
+                        </td>
+                        <td className="px-3 py-2 font-medium">
+                          {row.expenseTitle}
+                        </td>
+                        <td className="px-3 py-2">{row.summary}</td>
+                        <td className="px-3 py-2">{row.paymentDetails}</td>
+                        <td className="px-3 py-2 text-right font-semibold">
+                          ₹ {row.amount}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex justify-center gap-2">
+                            <Button size="icon" variant="outline">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="outline">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
-                    </thead>
+                    ))}
 
-                    <tbody>
-                      {filtered.map((row) => (
-                        <tr
-                          key={row.id}
-                          className="border-t hover:bg-muted/20"
-                        >
-                          <td className="px-3 py-2">
-                            {new Date(
-                              row.expenseDate
-                            ).toLocaleDateString()}
-                          </td>
-                          <td className="px-3 py-2">
-                            {row.expenseTitle}
-                          </td>
-                          <td className="px-3 py-2">{row.summary}</td>
-                          <td className="px-3 py-2">
-                            {row.paymentDetails}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            ₹ {row.amount}
-                          </td>
-                          <td className="px-3 py-2">
-                            <div className="flex justify-center gap-2">
-                              <Button size="icon" variant="outline">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button size="icon" variant="soft">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {filtered.length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="text-center p-4">
-                            No Expense Records Found.
-                          </td>
-                        </tr>
-                      )}
-
-                      {filtered.length > 0 && (
-                        <tr className="font-semibold border-t bg-muted/30">
-                          <td className="px-3 py-2">Total</td>
-                          <td colSpan={3}></td>
-                          <td className="px-3 py-2 text-right">
-                            ₹ {totalAmount}
-                          </td>
-                          <td></td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </ScrollArea>
+                    {filtered.length > 0 && (
+                      <tr className="font-semibold bg-muted/40 border-t">
+                        <td className="px-3 py-2">Total</td>
+                        <td colSpan={3}></td>
+                        <td className="px-3 py-2 text-right">
+                          ₹ {totalAmount}
+                        </td>
+                        <td></td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </CardContent>
         )}
 
-        {viewMode === "summary" && (
-          <div className="mt-4">
-            <SiteSummaryCards />
-          </div>
-        )}
+        {viewMode === "summary" && <SiteSummaryCards />}
       </Card>
 
-      {/* ================= ADD EXPENSE POPUP ================= */}
+      {/* ADD EXP MODAL */}
       <Dialog open={openAddExp} onOpenChange={setOpenAddExp}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Add Site Expense</DialogTitle>
           </DialogHeader>
-
-          <AddExp
-            onClose={() => setOpenAddExp(false)}
-            onSaved={loadExpenses}
-          />
+          <AddExp onClose={() => setOpenAddExp(false)} onSaved={loadExpenses} />
         </DialogContent>
       </Dialog>
     </>

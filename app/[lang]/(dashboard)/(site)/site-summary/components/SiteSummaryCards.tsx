@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Download } from "lucide-react";
 
 /* ========= EXPORT UTILS ========= */
@@ -43,30 +42,18 @@ export default function SiteSummaryCards() {
 
   /* ================= LOAD SITES ================= */
   useEffect(() => {
-    const loadSites = async () => {
-      try {
-        const res = await fetch(SITE_API);
-        const json = await res.json();
-        setSites(json.data || []);
-      } catch {
-        setSites([]);
-      }
-    };
-    loadSites();
+    fetch(SITE_API)
+      .then((r) => r.json())
+      .then((j) => setSites(j.data || []))
+      .catch(() => setSites([]));
   }, []);
 
   /* ================= LOAD EXPENSES ================= */
   useEffect(() => {
-    const loadExpenses = async () => {
-      try {
-        const res = await fetch(EXP_API);
-        const json = await res.json();
-        setExpenses(json.data || []);
-      } catch {
-        setExpenses([]);
-      }
-    };
-    loadExpenses();
+    fetch(EXP_API)
+      .then((r) => r.json())
+      .then((j) => setExpenses(j.data || []))
+      .catch(() => setExpenses([]));
   }, []);
 
   /* ================= SUMMARY GROUPING ================= */
@@ -75,7 +62,6 @@ export default function SiteSummaryCards() {
 
     expenses.forEach((exp) => {
       if (selectedSite && exp.site?.siteName !== selectedSite) return;
-
       const key = exp.summary || "Other";
       map.set(key, (map.get(key) || 0) + Number(exp.amount || 0));
     });
@@ -98,15 +84,14 @@ export default function SiteSummaryCards() {
   /* ================= TOTAL ================= */
   const totalAmount = filtered.reduce((sum, v) => sum + v.amount, 0);
 
-  /* ================= EXPORT DATA (WITH SITE + TOTAL) ================= */
+  /* ================= EXPORT DATA ================= */
   const exportData = [
     ...filtered.map((row) => ({
       Site: selectedSite || "All Sites",
       "Expense Summary": row.summary,
       Amount: row.amount,
     })),
-
-    ...(filtered.length > 0
+    ...(filtered.length
       ? [
           {
             Site: selectedSite || "All Sites",
@@ -118,7 +103,7 @@ export default function SiteSummaryCards() {
   ];
 
   return (
-    <Card className="p-6 shadow-sm border rounded-xl">
+    <Card className="p-6 border rounded-xl shadow-sm">
       {/* ================= HEADER ================= */}
       <CardHeader>
         <div className="flex flex-col md:flex-row justify-between gap-4 items-center">
@@ -128,7 +113,7 @@ export default function SiteSummaryCards() {
 
           <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto items-center">
             <Input
-              placeholder="Search..."
+              placeholder="Global Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full md:w-56"
@@ -154,7 +139,8 @@ export default function SiteSummaryCards() {
                   exportToCSV(exportData, "summary-wise-expenses")
                 }
               >
-                <Download className="h-4 w-4 mr-1" /> CSV
+                <Download className="h-4 w-4 mr-1" />
+                CSV
               </Button>
 
               <Button
@@ -179,59 +165,67 @@ export default function SiteSummaryCards() {
         </div>
       </CardHeader>
 
-      {/* ================= TABLE ================= */}
-      <CardContent>
-        <div className="border rounded-md">
-          <ScrollArea className="h-[320px] w-full">
-            <div className="w-max min-w-full overflow-x-auto">
-              <table className="table-fixed w-max min-w-full">
-                <thead className="bg-muted/40 sticky top-0 z-10">
-                  <tr>
-                    <th className="min-w-[300px] px-4 py-2 text-left whitespace-nowrap">
-                      Exp. Summary
-                    </th>
-                    <th className="min-w-[180px] px-4 py-2 text-right whitespace-nowrap">
-                      Amount
-                    </th>
+      {/* ================= TABLE (FINAL FORCE SCROLL) ================= */}
+      <CardContent className="p-0">
+        {/* 🔥 INLINE CSS — NOTHING CAN BLOCK THIS */}
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "100vw",
+            overflowX: "auto",
+            overflowY: "hidden",
+          }}
+        >
+          <div style={{ minWidth: "600px" }}>
+            <table className="w-full text-sm border-collapse">
+              <thead className="bg-muted/60 sticky top-0 border-b">
+                <tr className="text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-2 text-left whitespace-nowrap">
+                    Exp. Summary
+                  </th>
+                  <th className="px-4 py-2 text-right whitespace-nowrap">
+                    Amount
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {filtered.map((row, i) => (
+                  <tr
+                    key={i}
+                    className="border-t transition hover:bg-primary/10"
+                  >
+                    <td className="px-4 py-2 font-medium whitespace-nowrap">
+                      {row.summary}
+                    </td>
+                    <td className="px-4 py-2 text-right font-semibold whitespace-nowrap">
+                      ₹ {row.amount.toLocaleString()}
+                    </td>
                   </tr>
-                </thead>
+                ))}
 
-                <tbody>
-                  {filtered.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="border-t hover:bg-muted/20"
+                {filtered.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={2}
+                      className="text-center py-6 text-muted-foreground"
                     >
-                      <td className="px-4 py-2 whitespace-nowrap font-medium">
-                        {row.summary}
-                      </td>
+                      No Records Found
+                    </td>
+                  </tr>
+                )}
 
-                      <td className="px-4 py-2 text-right font-semibold whitespace-nowrap">
-                        ₹ {row.amount.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-
-                  {filtered.length === 0 && (
-                    <tr>
-                      <td colSpan={2} className="text-center p-4">
-                        No Records Found
-                      </td>
-                    </tr>
-                  )}
-
-                  {filtered.length > 0 && (
-                    <tr className="font-semibold border-t bg-muted/30">
-                      <td className="px-4 py-2">Total</td>
-                      <td className="px-4 py-2 text-right">
-                        ₹ {totalAmount.toLocaleString()}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </ScrollArea>
+                {filtered.length > 0 && (
+                  <tr className="font-semibold border-t bg-muted/40">
+                    <td className="px-4 py-2">Total</td>
+                    <td className="px-4 py-2 text-right">
+                      ₹ {totalAmount.toLocaleString()}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </CardContent>
     </Card>
