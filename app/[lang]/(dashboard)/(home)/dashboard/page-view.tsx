@@ -24,22 +24,22 @@ const DashboardPageView = ({ trans }: DashboardPageViewProps) => {
         <div className="text-2xl font-medium text-default-800 ">
           Analytics {trans?.dashboard}
         </div>
-        <DatePickerWithRange />
+        {/* <DatePickerWithRange /> */}
       </div>
       {/* reports area */}
       <div className="grid grid-cols-12  gap-6 ">
         <div className="col-span-12 lg:col-span-8">
-          <ReportsSnapshot />
+          {/* <ReportsSnapshot /> */}
         </div>
         <div className="col-span-12 lg:col-span-4">
-          <UsersStat />
+          {/* <UsersStat /> */}
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ReportsArea />
+          {/* <ReportsArea /> */}
         </div>
-        <Card>
+        {/* <Card>
           <CardHeader className="border-none p-6 pt-5 mb-0">
             <CardTitle className="text-lg font-semibold text-default-900 p-0">
               New vs Returning Visitors
@@ -48,8 +48,8 @@ const DashboardPageView = ({ trans }: DashboardPageViewProps) => {
           <CardContent>
             <UserStats />
           </CardContent>
-        </Card>
-        <Card>
+        </Card> */}
+        {/* <Card>
           <CardHeader className="border-none p-6 pt-5 mb-0">
             <CardTitle className="text-lg font-semibold text-default-900 p-0">
               Device Breakdown
@@ -60,10 +60,10 @@ const DashboardPageView = ({ trans }: DashboardPageViewProps) => {
               <UserDeviceReport />
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
       <div className="col-span-2">
-        <Card>
+        {/* <Card>
           <CardHeader className="border-none pb-0">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex-1 text-xl font-semibold text-default-900 whitespace-nowrap">
@@ -77,21 +77,21 @@ const DashboardPageView = ({ trans }: DashboardPageViewProps) => {
           <CardContent className="px-5 pb-0">
             <CountryMap />
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 lg:col-span-4">
-          <TopTen />
+          {/* <TopTen /> */}
         </div>
         <div className="col-span-12 lg:col-span-8">
-          <Card>
+          {/* <Card>
             <CardHeader className="border-none pb-0">
               <CardTitle className="pt-2.5">Top Page/Post</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <TopPage />
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
       </div>
     </div>

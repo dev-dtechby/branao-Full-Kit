@@ -26,7 +26,7 @@ const LoginPage = () => {
             />
             <div className="relative z-10 backdrop-blur bg-primary-foreground/40 py-14 px-16 2xl:py-[84px] 2xl:pl-[50px] 2xl:pr-[136px] rounded max-w-[640px]">
               <div>
-                <Button
+                {/* <Button
                   className="bg-transparent hover:bg-transparent h-fit w-fit p-0"
                   onClick={() => setOpenVideo(true)}
                 >
@@ -34,7 +34,7 @@ const LoginPage = () => {
                     icon="heroicons:play-solid"
                     className="text-primary-foreground h-[78px] w-[78px] -ml-2"
                   />
-                </Button>
+                </Button> */}
 
                 <div className="text-4xl leading-[50px] 2xl:text-6xl 2xl:leading-[72px] font-semibold mt-2.5">
                   <span className="text-default-600 dark:text-default-300 ">
@@ -60,7 +60,7 @@ const LoginPage = () => {
           </div>
         </div>
       </div>
-      <Dialog open={openVideo} >
+      {/* <Dialog open={openVideo} >
         <DialogContent size="lg" className="p-0" hiddenCloseIcon>
           <Button
             size="icon"
@@ -79,7 +79,7 @@ const LoginPage = () => {
             allowFullScreen
           ></iframe>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
     </Fragment>
   );
 };
