@@ -43,6 +43,13 @@ import {
   CustomIcon,
   Mail,
 } from "@/components/svg";
+import {
+  Settings,
+  ShieldCheck,
+  Trash2,
+  Lock,
+  Sliders,
+} from "lucide-react";
 
 
 export interface MenuItemProps {
@@ -302,6 +309,7 @@ export const menusConfig = {
         // },
       ],
     },
+    
 
     // {
     //   title: "Forms",
@@ -655,6 +663,41 @@ export const menusConfig = {
         //   href: "/data-table",
         //   icon: BarTop,
         // },
+      ],
+    },
+    /* ======================================================
+      SETTINGS / ADMIN SECTION (NEW)
+    ====================================================== */
+    {
+      title: "Settings",
+      icon: Settings, // lucide-react icon
+      child: [
+        {
+          title: "Audit Log",
+          href: "/audit-log",
+          icon: ShieldCheck,
+          description: "Track who did what & when",
+        },
+        {
+          title: "Deleted Records",
+          href: "/deleted-records",
+          icon: Trash2,
+          description: "Restore or permanently delete data",
+        },
+
+        /* ================= ADMIN ONLY ================= */
+        {
+          title: "Admin Tools",
+          href: "/admin-tools",
+          icon: Lock,
+          description: "Authorised Branao internal controls",
+        },
+        {
+          title: "System Settings",
+          href: "/system-settings",
+          icon: Sliders,
+          description: "Global ERP configurations",
+        },
       ],
     },
     // {
@@ -1670,7 +1713,41 @@ export const menusConfig = {
           // },
         ],
       },
+   /* ======================================================
+      SETTINGS / ADMIN SECTION (NEW)
+    ====================================================== */
+    {
+      title: "Settings",
+      icon: Settings, // lucide-react icon
+      child: [
+        {
+          title: "Audit Log",
+          href: "/audit-log",
+          icon: ShieldCheck,
+          description: "Track who did what & when",
+        },
+        {
+          title: "Deleted Records",
+          href: "/deleted-records",
+          icon: Trash2,
+          description: "Restore or permanently delete data",
+        },
 
+        /* ================= ADMIN ONLY ================= */
+        {
+          title: "Admin Tools",
+          href: "/admin-tools",
+          icon: Lock,
+          description: "Authorised Branao internal controls",
+        },
+        {
+          title: "System Settings",
+          href: "/system-settings",
+          icon: Sliders,
+          description: "Global ERP configurations",
+        },
+      ],
+    },
       // {
       //   title: "Diagram",
       //   icon: Chart,
@@ -2707,6 +2784,41 @@ export const menusConfig = {
           // },
         ],
       },
+         /* ======================================================
+      SETTINGS / ADMIN SECTION (NEW)
+    ====================================================== */
+    {
+      title: "Settings",
+      icon: Settings, // lucide-react icon
+      child: [
+        {
+          title: "Audit Log",
+          href: "/audit-log",
+          icon: ShieldCheck,
+          description: "Track who did what & when",
+        },
+        {
+          title: "Deleted Records",
+          href: "/deleted-records",
+          icon: Trash2,
+          description: "Restore or permanently delete data",
+        },
+
+        /* ================= ADMIN ONLY ================= */
+        {
+          title: "Admin Tools",
+          href: "/admin-tools",
+          icon: Lock,
+          description: "Authorised Branao internal controls",
+        },
+        {
+          title: "System Settings",
+          href: "/system-settings",
+          icon: Sliders,
+          description: "Global ERP configurations",
+        },
+      ],
+    },
       // {
       //   title: "Diagram",
       //   icon: Chart,

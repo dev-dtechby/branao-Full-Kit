@@ -8,29 +8,28 @@ datasource db {
 }
 
 ////////////////////////////////////////////////
-/// COMMON SOFT DELETE RULE (MENTAL MODEL)
+/// GLOBAL SOFT DELETE & AUDIT MENTAL MODEL
 /// ----------------------------------------
-/// isDeleted = false  → Active data
-/// isDeleted = true   → Deleted Records (Recoverable)
+/// isDeleted = false  → Active
+/// isDeleted = true   → Deleted (Recoverable)
 /// deletedAt != null  → Delete timestamp
+/// deletedBy          → User/Admin ID
 ////////////////////////////////////////////////
 
 
 ////////////////////////////////////////////////
 /// ================= DEPARTMENT =================
-/// ✔ Master table
-/// ✔ Seeded data (WRD, PHED, JJM, CGMSC)
-/// ✔ SOFT DELETE ENABLED
 ////////////////////////////////////////////////
 model Department {
   id        String   @id @default(cuid())
   name      String   @unique
 
-  isDeleted Boolean  @default(false)
+  isDeleted Boolean   @default(false)
   deletedAt DateTime?
+  deletedBy String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   sites     Site[]
 
@@ -40,28 +39,26 @@ model Department {
 
 ////////////////////////////////////////////////
 /// ================= SITE =================
-/// ✔ Core entity
-/// ✔ Linked with Department
-/// ✔ SOFT DELETE ENABLED
 ////////////////////////////////////////////////
 model Site {
-  id           String        @id @default(cuid())
+  id           String   @id @default(cuid())
   siteName     String
   tenderNo     String?
-  sdAmount     Decimal?      @db.Decimal(18, 2)
+  sdAmount     Decimal? @db.Decimal(18, 2)
 
   departmentId String?
-  department   Department?  @relation(fields: [departmentId], references: [id])
+  department   Department? @relation(fields: [departmentId], references: [id])
 
   expenses     SiteExpense[]
   documents    SiteDocument[]
   estimate     SiteEstimate?
 
-  isDeleted Boolean  @default(false)
+  isDeleted Boolean   @default(false)
   deletedAt DateTime?
+  deletedBy String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@index([departmentId])
   @@index([isDeleted])
@@ -70,8 +67,6 @@ model Site {
 
 ////////////////////////////////////////////////
 /// ================= SITE ESTIMATE =================
-/// ✔ One-to-one with Site
-/// ✔ Cascades on HARD delete only
 ////////////////////////////////////////////////
 model SiteEstimate {
   id              String   @id @default(cuid())
@@ -97,10 +92,6 @@ model SiteEstimate {
 
 ////////////////////////////////////////////////
 /// ================= SITE DOCUMENT =================
-/// ✔ Cloudinary-based storage
-/// ✔ SD & WORK_ORDER unique per site
-/// ✔ TENDER multiple allowed
-/// ✔ FOLLOWS SITE DELETE STATE
 ////////////////////////////////////////////////
 model SiteDocument {
   id           String       @id @default(cuid())
@@ -127,8 +118,6 @@ model SiteDocument {
 
 ////////////////////////////////////////////////
 /// ================= SITE EXPENSE =================
-/// ✔ Linked with Site
-/// ✔ SOFT DELETE ENABLED (VERY IMPORTANT)
 ////////////////////////////////////////////////
 model SiteExpense {
   id String @id @default(cuid())
@@ -142,14 +131,39 @@ model SiteExpense {
   paymentDetails String?
   amount         Decimal  @db.Decimal(18, 2)
 
-  isDeleted Boolean  @default(false)
+  isDeleted Boolean   @default(false)
   deletedAt DateTime?
+  deletedBy String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([siteId])
   @@index([isDeleted])
+}
+
+
+////////////////////////////////////////////////
+/// ================= AUDIT LOG (GLOBAL) =================
+////////////////////////////////////////////////
+model AuditLog {
+  id        String   @id @default(cuid())
+
+  userId   String?
+  module   String   // Site | Expense | Department | etc.
+  recordId String
+  action   String   // CREATE | UPDATE | DELETE | RESTORE | HARD_DELETE
+
+  oldData  Json?
+  newData  Json?
+
+  ip       String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([module])
+  @@index([recordId])
 }
 
 
