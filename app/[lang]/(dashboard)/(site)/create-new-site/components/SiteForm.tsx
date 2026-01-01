@@ -225,6 +225,7 @@ export default function SiteForm() {
 
         {/* ESTIMATE */}
         <h3 className="text-xl font-semibold">Estimate</h3>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
             "Cement",
@@ -238,14 +239,17 @@ export default function SiteForm() {
             "Water & Compaction",
             "Loading",
           ].map((item) => (
-            <Input
-              key={item}
-              placeholder={item}
-              value={estimate[item] || ""}
-              onChange={(e) => handleEstimateChange(item, e.target.value)}
-            />
+            <div key={item} className="space-y-1">
+              <Label className="text-sm font-medium">{item}</Label>
+              <Input
+                value={estimate[item] || ""}
+                onChange={(e) => handleEstimateChange(item, e.target.value)}
+                placeholder={`Enter ${item}`}
+              />
+            </div>
           ))}
         </div>
+
 
         {/* ACTION */}
         <div className="flex justify-center gap-4">

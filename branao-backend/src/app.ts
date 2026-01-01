@@ -6,6 +6,7 @@ import morgan from "morgan";
 import siteRoutes from "./modules/site/site.routes";
 import departmentRoutes from "./modules/department/department.routes";
 import siteExpRoutes from "./modules/site-exp/site-exp.routes";
+import auditLogRoutes from "./modules/audit-log/audit-log.routes"; // ✅ ADD THIS
 
 const app = express();
 
@@ -13,16 +14,15 @@ const app = express();
 // ✅ CORS (LOCAL + PROD)
 // ====================
 const allowedOrigins = [
-  "http://localhost:3000",          // local frontend
-  "https://branao.in",              // production
+  "http://localhost:3000",
+  "https://branao.in",
   "https://www.branao.in",
-  "https://branao.vercel.app",      // vercel default
+  "https://branao.vercel.app",
 ];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow server-to-server / Postman / curl
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
@@ -57,6 +57,8 @@ app.get("/", (_req, res) => {
 app.use("/api/sites", siteRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/site-exp", siteExpRoutes);
+app.use("/api/audit-log", auditLogRoutes); // ✅ THIS FIXES EVERYTHING
+
 // ====================
 // 404 Handler
 // ====================

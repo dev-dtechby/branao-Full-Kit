@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import prisma from "../../lib/prisma";
+import * as service from "./site-exp.service";
 
 /**
  * =========================================================
@@ -33,17 +33,21 @@ export const createSiteExpense = async (req: Request, res: Response) => {
       });
     }
 
-    /* ---------------- CREATE ---------------- */
-    const expense = await prisma.siteExpense.create({
-      data: {
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    const expense = await service.createSiteExpense(
+      {
         siteId,
-        expenseDate: new Date(expenseDate),
-        expenseTitle: expenseTitle?.trim(),
-        summary: expenseSummary?.trim(),
-        paymentDetails: paymentDetails?.trim(),
+        expenseDate,
+        expenseTitle,
+        expenseSummary,
+        paymentDetails,
         amount: Number(amount),
       },
-    });
+      userId,
+      ip
+    );
 
     return res.status(201).json({
       success: true,
@@ -62,26 +66,13 @@ export const createSiteExpense = async (req: Request, res: Response) => {
 
 /**
  * =========================================================
- * GET ALL SITE EXPENSES
+ * GET ALL SITE EXPENSES (ACTIVE ONLY)
  * GET /api/site-exp
  * =========================================================
  */
 export const getAllSiteExpenses = async (_req: Request, res: Response) => {
   try {
-    const expenses = await prisma.siteExpense.findMany({
-      where: {
-        isDeleted: false, // ✅ SOFT DELETE SAFE
-      },
-      orderBy: { expenseDate: "desc" },
-      include: {
-        site: {
-          select: {
-            id: true,
-            siteName: true,
-          },
-        },
-      },
-    });
+    const expenses = await service.getAllSiteExpenses();
 
     return res.status(200).json({
       success: true,
@@ -100,7 +91,7 @@ export const getAllSiteExpenses = async (_req: Request, res: Response) => {
 
 /**
  * =========================================================
- * GET EXPENSES BY SITE
+ * GET EXPENSES BY SITE (ACTIVE ONLY)
  * GET /api/site-exp/site/:siteId
  * =========================================================
  */
@@ -115,13 +106,7 @@ export const getExpensesBySite = async (req: Request, res: Response) => {
       });
     }
 
-    const expenses = await prisma.siteExpense.findMany({
-      where: {
-        siteId,
-        isDeleted: false,
-      },
-      orderBy: { expenseDate: "desc" },
-    });
+    const expenses = await service.getExpensesBySite(siteId);
 
     return res.status(200).json({
       success: true,
@@ -163,17 +148,22 @@ export const updateSiteExpense = async (req: Request, res: Response) => {
       });
     }
 
-    const updated = await prisma.siteExpense.update({
-      where: { id },
-      data: {
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    const updated = await service.updateSiteExpense(
+      id,
+      {
         siteId,
-        expenseDate: new Date(expenseDate),
-        expenseTitle: expenseTitle?.trim(),
-        summary: expenseSummary?.trim(),
-        paymentDetails: paymentDetails?.trim(),
+        expenseDate,
+        expenseTitle,
+        expenseSummary,
+        paymentDetails,
         amount: Number(amount),
       },
-    });
+      userId,
+      ip
+    );
 
     return res.status(200).json({
       success: true,
@@ -207,13 +197,10 @@ export const deleteSiteExpense = async (req: Request, res: Response) => {
       });
     }
 
-    await prisma.siteExpense.update({
-      where: { id },
-      data: {
-        isDeleted: true,
-        deletedAt: new Date(),
-      },
-    });
+    const userId = (req as any).user?.id || "SYSTEM";
+    const ip = req.ip;
+
+    await service.softDeleteSiteExpense(id, userId, ip);
 
     return res.status(200).json({
       success: true,
