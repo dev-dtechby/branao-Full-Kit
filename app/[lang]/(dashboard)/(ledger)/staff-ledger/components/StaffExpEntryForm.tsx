@@ -1,125 +1,257 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CalendarIcon } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/use-toast";
 
-// ---------------- PROPS ----------------
-interface StaffExpEntryFormProps {
-  staff: string;
+/* ================= TYPES ================= */
+interface Site {
+  id: string;
+  siteName: string;
+}
+
+interface Props {
+  staffLedger: {
+    id: string;
+    name: string;
+  };
   onClose: () => void;
 }
 
-export default function StaffExpEntryForm({ staff, onClose }: StaffExpEntryFormProps) {
+/* ================= API ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+export default function StaffExpEntryForm({
+  staffLedger,
+  onClose,
+}: Props) {
+  const { toast } = useToast();
+
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [sites, setSites] = useState<Site[]>([]);
+  const [loading, setLoading] = useState(false);
 
+  const [form, setForm] = useState({
+    siteId: "",
+    expenseTitle: "",
+    summary: "",
+    remark: "",
+    amount: "", // 🔥 UI stays SAME
+  });
+
+  /* ================= LOAD SITES ================= */
+  useEffect(() => {
+    fetchSites();
+  }, []);
+
+  const fetchSites = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/sites`, {
+        credentials: "include",
+      });
+      const json = await res.json();
+      setSites(json?.data ?? []);
+    } catch {
+      toast({
+        title: "❌ Error",
+        description: "Failed to load sites",
+      });
+    }
+  };
+
+  /* ================= SAVE ================= */
+  const handleSave = async () => {
+    if (!form.siteId || !form.expenseTitle || !form.amount) {
+      toast({
+        title: "⚠️ Required",
+        description: "Site, Expense & Amount are mandatory",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const payload = {
+        staffLedgerId: staffLedger.id, // ✅ FIX
+        siteId: form.siteId,
+        expenseDate: date?.toISOString(), // ✅ SAFE
+        expenseTitle: form.expenseTitle,
+        summary: form.summary,
+        remark: form.remark,
+        outAmount: Number(form.amount), // ✅ FIX (backend expects outAmount)
+      };
+
+      const res = await fetch(`${BASE_URL}/api/staff-expense`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message);
+
+      toast({
+        title: "✅ Expense Saved",
+        description: "Staff & Site expense recorded",
+      });
+
+      handleReset();
+      onClose();
+    } catch (err: any) {
+      toast({
+        title: "❌ Error",
+        description: err.message || "Failed to save expense",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ================= RESET ================= */
+  const handleReset = () => {
+    setForm({
+      siteId: "",
+      expenseTitle: "",
+      summary: "",
+      remark: "",
+      amount: "",
+    });
+    setDate(new Date());
+  };
+
+  /* ================= UI ================= */
   return (
-    <Card className="p-6 shadow-md border space-y-6 mt-4 rounded-xl bg-card">
-      {/* ---------- Header ---------- */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-default-900">
-          Expense Entry – <span className="text-primary">{staff}</span>
-        </h2>
+    <Card className="p-6 rounded-xl bg-card shadow-md space-y-6">
+      {/* ===== Ledger Name ===== */}
+      <h2 className="text-2xl font-semibold text-primary">
+        {staffLedger.name}
+      </h2>
 
-        <Button variant="outline" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-
-      {/* ---------- ROW 1 ---------- */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
+      {/* ===== Date + Site ===== */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Date */}
-        <div className="space-y-1">
-          <Label className="font-semibold">Date</Label>
-
+        <div>
+          <Label>Date</Label>
           <Popover>
             <PopoverTrigger className="w-full">
               <div
                 className={cn(
-                  "flex items-center justify-between w-full rounded-md border px-3 py-2 text-sm bg-background cursor-pointer"
+                  "flex items-center justify-between w-full rounded-md border px-3 py-2 bg-background cursor-pointer"
                 )}
               >
-                {date ? date.toLocaleDateString() : "Pick a date"}
+                {date
+                  ? date.toLocaleDateString()
+                  : "Pick a date"}
                 <CalendarIcon className="h-4 w-4 opacity-50" />
               </div>
             </PopoverTrigger>
-
             <PopoverContent className="p-0">
-              <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={setDate}
+                initialFocus
+              />
             </PopoverContent>
           </Popover>
         </div>
 
         {/* Site */}
         <div>
-          <Label className="font-semibold">Site</Label>
-          <select className="w-full border rounded-md px-3 py-2 bg-background text-sm">
-            <option>Select Site</option>
-            <option>Dev Site</option>
-            <option>New Raipur</option>
-            <option>Kondagaon</option>
-          </select>
-        </div>
-
-        {/* Expense Summary */}
-        <div>
-          <Label className="font-semibold">Exp. Summary</Label>
-          <select className="w-full border rounded-md px-3 py-2 bg-background text-sm">
-            <option>Select Summary</option>
-            <option>Petrol</option>
-            <option>Food</option>
-            <option>Office Work</option>
+          <Label>Site</Label>
+          <select
+            className="w-full border rounded-md px-3 py-2 bg-background"
+            value={form.siteId}
+            onChange={(e) =>
+              setForm({ ...form, siteId: e.target.value })
+            }
+          >
+            <option value="">Select Site</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.siteName}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
-      {/* ---------- ROW 2 ---------- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Through */}
-        <div>
-          <Label className="font-semibold">Through</Label>
-          <select className="w-full border rounded-md px-3 py-2 bg-background text-sm">
-            <option>Select Through</option>
-            <option>Cash</option>
-            <option>UPI</option>
-            <option>Bank Transfer</option>
-          </select>
-        </div>
-
-        {/* Particulars */}
-        <div>
-          <Label className="font-semibold">Particulars</Label>
-          <Input placeholder="Enter particulars" />
-        </div>
+      {/* ===== Expense / Particular ===== */}
+      <div>
+        <Label>Expense / Particular</Label>
+        <Input
+          placeholder="Petrol / Labour / Food etc."
+          value={form.expenseTitle}
+          onChange={(e) =>
+            setForm({ ...form, expenseTitle: e.target.value })
+          }
+        />
       </div>
 
-      {/* ---------- ROW 3 ---------- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Out Amount */}
-        <div>
-          <Label className="font-semibold text-green-600">Amount (Out)</Label>
-          <Input className="border-green-500" placeholder="Enter Out Amount" />
-        </div>
-
-        {/* Received Amount */}
-        <div>
-          <Label className="font-semibold text-red-600">Received / In</Label>
-          <Input className="border-red-500" placeholder="Enter Received Amount" />
-        </div>
+      {/* ===== Summary ===== */}
+      <div>
+        <Label>Exp. Summary</Label>
+        <Input
+          placeholder="Short summary"
+          value={form.summary}
+          onChange={(e) =>
+            setForm({ ...form, summary: e.target.value })
+          }
+        />
       </div>
 
-      {/* ---------- Buttons ---------- */}
-      <div className="flex flex-wrap gap-3 pt-3">
-        <Button className="px-8">Save</Button>
-        <Button variant="soft" className="px-8">Update</Button>
-        <Button variant="outline" className="px-8">Reset</Button>
+      {/* ===== Remark ===== */}
+      <div>
+        <Label>Remark</Label>
+        <Input
+          placeholder="Additional remark"
+          value={form.remark}
+          onChange={(e) =>
+            setForm({ ...form, remark: e.target.value })
+          }
+        />
+      </div>
+
+      {/* ===== Amount ===== */}
+      <div>
+        <Label className="text-red-600">
+          Amount (Out)
+        </Label>
+        <Input
+          className="border-red-500"
+          placeholder="Enter Out Amount"
+          value={form.amount}
+          onChange={(e) =>
+            setForm({ ...form, amount: e.target.value })
+          }
+        />
+      </div>
+
+      {/* ===== Buttons ===== */}
+      <div className="flex flex-wrap gap-3 pt-4">
+        <Button onClick={handleSave} disabled={loading}>
+          {loading ? "Saving..." : "Save"}
+        </Button>
+        <Button variant="outline" onClick={handleReset}>
+          Reset
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
       </div>
     </Card>
   );

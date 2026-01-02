@@ -13,39 +13,110 @@ import {
 } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/use-toast";
 
-// -------------------- Props --------------------
-interface StaffAmountReceiveProps {
-  staff: string;
+/* ================= TYPES ================= */
+interface StaffLedger {
+  id: string;
+  name: string;
+}
+
+interface Props {
+  staffLedger: StaffLedger;
   onClose: () => void;
 }
 
+/* ================= API BASE ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
 export default function StaffAmountReceive({
-  staff,
+  staffLedger,
   onClose,
-}: StaffAmountReceiveProps) {
+}: Props) {
+  const { toast } = useToast();
+
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [loading, setLoading] = useState(false);
 
+  const [form, setForm] = useState({
+    through: "",
+    particulars: "",
+    amount: "",
+  });
+
+  /* ================= RESET ================= */
+  const handleReset = () => {
+    setForm({
+      through: "",
+      particulars: "",
+      amount: "",
+    });
+    setDate(new Date());
+  };
+
+  /* ================= SAVE ================= */
+  const handleSave = async () => {
+    if (!date || !form.through || !form.amount) {
+      toast({
+        title: "❌ Required fields missing",
+        description: "Date, Through & Amount are mandatory",
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const payload = {
+        staffLedgerId: staffLedger.id,
+        receiptDate: date,
+        through: form.through,
+        particulars: form.particulars,
+        inAmount: Number(form.amount), // ✅ IMPORTANT
+      };
+
+      console.log("Amount Receive Payload", payload);
+
+      const res = await fetch(`${BASE_URL}/api/staff-receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error();
+
+      toast({
+        title: "✅ Amount Received Saved",
+        description: staffLedger.name,
+      });
+
+      handleReset();
+      onClose();
+    } catch (err) {
+      toast({
+        title: "❌ Error",
+        description: "Failed to save received amount",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ================= UI ================= */
   return (
-    <Card className="p-6 mt-4 shadow-md border space-y-6 rounded-xl bg-card">
-      {/* ---------- Header ---------- */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-default-900">
-          Amount Received –{" "}
-          <span className="text-primary font-bold">{staff}</span>
-        </h2>
+    <Card className="p-6 shadow-md border rounded-xl bg-card space-y-6">
+      {/* ===== Ledger Name ===== */}
+      <h2 className="text-2xl font-semibold text-primary">
+        {staffLedger.name}
+      </h2>
 
-        <Button variant="outline" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-
-      {/* ---------- ROW 1 ---------- */}
+      {/* ===== Date + Through ===== */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Date */}
         <div className="space-y-1">
-          <Label className="font-semibold">Date</Label>
-
+          <Label>Date</Label>
           <Popover>
             <PopoverTrigger className="w-full">
               <div
@@ -57,7 +128,6 @@ export default function StaffAmountReceive({
                 <CalendarIcon className="h-4 w-4 opacity-50" />
               </div>
             </PopoverTrigger>
-
             <PopoverContent className="p-0">
               <Calendar
                 mode="single"
@@ -71,39 +141,57 @@ export default function StaffAmountReceive({
 
         {/* Through */}
         <div className="space-y-1">
-          <Label className="font-semibold">Through</Label>
-          <select className="w-full border rounded-md px-3 py-2 bg-background text-sm">
-            <option>Select Through</option>
-            <option>Cash</option>
-            <option>UPI</option>
-            <option>Bank Transfer</option>
+          <Label>Through</Label>
+          <select
+            className="w-full border rounded-md px-3 py-2 bg-background text-sm"
+            value={form.through}
+            onChange={(e) =>
+              setForm({ ...form, through: e.target.value })
+            }
+          >
+            <option value="">Select Through</option>
+            <option value="Cash">Cash</option>
+            <option value="UPI">UPI</option>
+            <option value="Bank">Bank Transfer</option>
           </select>
         </div>
       </div>
 
-      {/* ---------- Particulars ---------- */}
+      {/* ===== Particulars ===== */}
       <div className="space-y-1">
-        <Label className="font-semibold">Particulars</Label>
-        <Input placeholder="Enter particulars" />
-      </div>
-
-      {/* ---------- Received Amount ---------- */}
-      <div className="space-y-1">
-        <Label className="font-semibold text-red-600">Received / In</Label>
+        <Label>Particulars</Label>
         <Input
-          className="border-red-500"
-          placeholder="Enter received amount"
+          placeholder="Enter particulars"
+          value={form.particulars}
+          onChange={(e) =>
+            setForm({ ...form, particulars: e.target.value })
+          }
         />
       </div>
 
-      {/* ---------- Buttons ---------- */}
-      <div className="flex flex-wrap gap-3 pt-3">
-        <Button className="px-8">Save</Button>
-        <Button variant="soft" className="px-8">
-          Update
+      {/* ===== Amount In ===== */}
+      <div className="space-y-1">
+        <Label className="text-green-600">Received / In</Label>
+        <Input
+          className="border-green-500"
+          placeholder="Enter received amount"
+          value={form.amount}
+          onChange={(e) =>
+            setForm({ ...form, amount: e.target.value })
+          }
+        />
+      </div>
+
+      {/* ===== Buttons ===== */}
+      <div className="flex flex-wrap gap-3 pt-4">
+        <Button onClick={handleSave} disabled={loading}>
+          {loading ? "Saving..." : "Save"}
         </Button>
-        <Button variant="outline" className="px-8">
+        <Button variant="outline" onClick={handleReset}>
           Reset
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
         </Button>
       </div>
     </Card>

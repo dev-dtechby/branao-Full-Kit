@@ -13,6 +13,8 @@ import siteProfitRoutes from "./modules/site-profit/site-profit.routes";
 import voucherRoutes from "./modules/voucher/voucher.routes";
 import ledgerTypeRoutes from "./modules/ledger-type/ledger-type.routes";
 import ledgerRoutes from "./modules/ledger/ledger.routes";
+import staffExpenseRoutes from "./modules/staff-expense/staff-expense.routes";
+
 
 const app = express();
 
@@ -69,6 +71,7 @@ app.use("/api/site-profit", siteProfitRoutes);
 app.use("/api/vouchers", voucherRoutes);
 app.use("/api/ledger-types", ledgerTypeRoutes);
 app.use("/api/ledgers", ledgerRoutes);
+app.use("/api/staff-expense", staffExpenseRoutes);
 
 // ====================
 // 404 HANDLER

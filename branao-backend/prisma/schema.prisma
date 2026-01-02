@@ -51,13 +51,14 @@ model Site {
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id])
 
-  expenses  SiteExpense[]
-  receipts  SiteReceipt[] // 🔥 Amt Received
-  documents SiteDocument[]
-  estimate  SiteEstimate?
-  vouchers  Voucher[]
-  ledgers   Ledger[]
-  
+  expenses      SiteExpense[]
+  receipts      SiteReceipt[] // 🔥 Amt Received
+  documents     SiteDocument[]
+  estimate      SiteEstimate?
+  vouchers      Voucher[]
+  ledgers       Ledger[]
+  staffExpenses StaffExpense[]
+
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
@@ -133,6 +134,7 @@ model SiteExpense {
   summary        String
   paymentDetails String?
   amount         Decimal  @db.Decimal(18, 2)
+
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -294,15 +296,16 @@ model Ledger {
   ledgerType   LedgerType @relation(fields: [ledgerTypeId], references: [id])
 
   siteId String?
-  site   Site? @relation(fields: [siteId], references: [id])
+  site   Site?   @relation(fields: [siteId], references: [id])
 
   name    String
   address String?
   mobile  String?
 
-  openingBalance Decimal? @db.Decimal(18, 2)
-  closingBalance Decimal? @db.Decimal(18, 2)
-  remark          String?
+  openingBalance Decimal?       @db.Decimal(18, 2)
+  closingBalance Decimal?       @db.Decimal(18, 2)
+  remark         String?
+  staffExpenses  StaffExpense[]
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -314,4 +317,31 @@ model Ledger {
   @@index([ledgerTypeId])
   @@index([siteId])
   @@index([isDeleted])
+}
+
+////////////////////////////////////////////////
+/// =============== STAFF EXPENSE ==============
+////////////////////////////////////////////////
+model StaffExpense {
+  id String @id @default(cuid())
+
+  staffLedgerId String
+  staffLedger   Ledger @relation(fields: [staffLedgerId], references: [id])
+
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id])
+
+  expenseDate DateTime
+
+  expenseTitle String
+  summary      String?
+  remark       String?
+
+  amount Decimal @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([staffLedgerId])
+  @@index([siteId])
 }

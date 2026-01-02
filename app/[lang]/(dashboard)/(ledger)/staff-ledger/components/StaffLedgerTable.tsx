@@ -26,7 +26,6 @@ interface Ledger {
   name: string;
   address?: string | null;
   mobile?: string | null;
-  site?: { siteName: string } | null;
   ledgerType?: { name: string } | null;
 }
 
@@ -37,11 +36,12 @@ const BASE_URL =
 /* ================= COMPONENT ================= */
 export default function StaffLedgerTable() {
   const [search, setSearch] = useState("");
-  const [selectedStaff, setSelectedStaff] = useState("");
   const [openForm, setOpenForm] =
     useState<"exp" | "received" | null>(null);
 
   const [staffLedgers, setStaffLedgers] = useState<Ledger[]>([]);
+  const [selectedLedger, setSelectedLedger] =
+    useState<Ledger | null>(null);
 
   /* ================= FETCH STAFF / SUPERVISOR LEDGERS ================= */
   useEffect(() => {
@@ -57,11 +57,18 @@ export default function StaffLedgerTable() {
       const json = await res.json();
 
       const filtered =
-        json?.data?.filter((l: Ledger) =>
-          l.ledgerType?.name
-            ?.toLowerCase()
-            .includes("staff")
+        json?.data?.filter(
+          (l: Ledger) =>
+            l.ledgerType?.name &&
+            l.ledgerType.name
+              .toLowerCase()
+              .includes("staff")
+            ||
+            l.ledgerType?.name
+              ?.toLowerCase()
+              .includes("supervisor")
         ) ?? [];
+
 
       setStaffLedgers(filtered);
     } catch (err) {
@@ -70,24 +77,19 @@ export default function StaffLedgerTable() {
     }
   };
 
-  /* ================= STAFF LIST ================= */
-  const staffList = useMemo(() => {
-    return staffLedgers
+  /* ================= STAFF NAME LIST ================= */
+const staffNameList = useMemo(
+  () =>
+    staffLedgers
       .map((l) => l.name)
-      .filter(Boolean);
-  }, [staffLedgers]);
-
-  /* ================= SELECTED STAFF OBJECT ================= */
-  const selectedStaffLedger = useMemo(() => {
-    return staffLedgers.find(
-      (l) => l.name === selectedStaff
-    );
-  }, [selectedStaff, staffLedgers]);
+      .filter(Boolean),
+  [staffLedgers]
+);
 
   /* ================= UI ================= */
   return (
     <>
-      {/* ================= MAIN LEDGER CARD ================= */}
+      {/* ================= MAIN CARD ================= */}
       <Card className="p-4 md:p-6 shadow-sm border rounded-xl bg-card">
         <CardHeader className="pb-2">
           <CardTitle className="text-2xl font-semibold">
@@ -104,15 +106,21 @@ export default function StaffLedgerTable() {
                 placeholder="Search / Select Staff..."
                 value={search}
                 onChange={(e) => {
-                  setSearch(e.target.value);
-                  setSelectedStaff(e.target.value);
+                  const value = e.target.value;
+                  setSearch(value);
+
+                  const ledger = staffLedgers.find(
+                    (l) => l.name === value
+                  );
+
+                  setSelectedLedger(ledger || null);
                 }}
                 list="staff-options"
               />
 
               <datalist id="staff-options">
-                {staffList.map((item) => (
-                  <option key={item} value={item} />
+                {staffNameList.map((name) => (
+                  <option key={name} value={name} />
                 ))}
               </datalist>
             </div>
@@ -121,7 +129,7 @@ export default function StaffLedgerTable() {
             <div className="flex flex-wrap gap-2 md:ml-auto">
               <Button
                 onClick={() => setOpenForm("exp")}
-                disabled={!selectedStaff}
+                disabled={!selectedLedger}
               >
                 Expense Entry
               </Button>
@@ -129,7 +137,7 @@ export default function StaffLedgerTable() {
               <Button
                 variant="outline"
                 onClick={() => setOpenForm("received")}
-                disabled={!selectedStaff}
+                disabled={!selectedLedger}
               >
                 Amount Received
               </Button>
@@ -141,14 +149,14 @@ export default function StaffLedgerTable() {
           </div>
 
           {/* -------- Staff Info Box -------- */}
-          {selectedStaff && (
+          {selectedLedger && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted rounded-lg border">
               <div>
                 <p className="text-xs text-muted-foreground">
                   Account Of
                 </p>
-                <p className="font-semibold text-default-900">
-                  {selectedStaffLedger?.name || "—"}
+                <p className="font-semibold">
+                  {selectedLedger.name}
                 </p>
               </div>
 
@@ -156,8 +164,8 @@ export default function StaffLedgerTable() {
                 <p className="text-xs text-muted-foreground">
                   Address
                 </p>
-                <p className="text-default-700">
-                  {selectedStaffLedger?.address || "—"}
+                <p>
+                  {selectedLedger.address || "—"}
                 </p>
               </div>
 
@@ -165,14 +173,14 @@ export default function StaffLedgerTable() {
                 <p className="text-xs text-muted-foreground">
                   Contact No
                 </p>
-                <p className="font-medium text-default-700">
-                  {selectedStaffLedger?.mobile || "—"}
+                <p>
+                  {selectedLedger.mobile || "—"}
                 </p>
               </div>
             </div>
           )}
 
-          {/* -------- Ledger Table (placeholder) -------- */}
+          {/* -------- Ledger Table Placeholder -------- */}
           <ScrollArea className="rounded-md border w-full overflow-auto">
             <table className="min-w-[900px] w-full">
               <thead className="bg-default-100">
@@ -197,7 +205,7 @@ export default function StaffLedgerTable() {
               </thead>
 
               <tbody>
-                {!selectedStaff && (
+                {!selectedLedger && (
                   <tr>
                     <td
                       colSpan={8}
@@ -222,10 +230,13 @@ export default function StaffLedgerTable() {
           <DialogHeader>
             <DialogTitle>Expense Entry</DialogTitle>
           </DialogHeader>
-          <StaffExpEntryForm
-            staff={selectedStaff}
-            onClose={() => setOpenForm(null)}
-          />
+
+          {selectedLedger && (
+            <StaffExpEntryForm
+              staffLedger={selectedLedger}
+              onClose={() => setOpenForm(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -238,10 +249,17 @@ export default function StaffLedgerTable() {
           <DialogHeader>
             <DialogTitle>Amount Received</DialogTitle>
           </DialogHeader>
-          <StaffAmountReceive
-            staff={selectedStaff}
-            onClose={() => setOpenForm(null)}
-          />
+
+          {selectedLedger && (
+            <StaffAmountReceive
+              staffLedger={{
+                id: selectedLedger.id,
+                name: selectedLedger.name,
+              }}
+              onClose={() => setOpenForm(null)}
+            />
+          )}
+
         </DialogContent>
       </Dialog>
     </>
