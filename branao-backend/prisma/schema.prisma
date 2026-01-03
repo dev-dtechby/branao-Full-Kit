@@ -135,6 +135,9 @@ model SiteExpense {
   paymentDetails String?
   amount         Decimal  @db.Decimal(18, 2)
 
+  // ✅ LINK TO STAFF EXPENSE (for sync)
+  staffExpenseId String?       @unique
+  staffExpense   StaffExpense? @relation("StaffExpenseToSiteExpense", fields: [staffExpenseId], references: [id], onDelete: SetNull)
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -146,6 +149,8 @@ model SiteExpense {
   @@index([siteId])
   @@index([expenseDate])
   @@index([isDeleted])
+  // ✅ helpful for future lookup/filter
+  @@index([staffExpenseId])
 }
 
 ////////////////////////////////////////////////
@@ -331,13 +336,16 @@ model StaffExpense {
   siteId String?
   site   Site?   @relation(fields: [siteId], references: [id])
 
-  expenseDate DateTime
+  expenseDate  DateTime
   expenseTitle String
   summary      String?
   remark       String?
 
   outAmount Decimal? @db.Decimal(18, 2)
   inAmount  Decimal? @db.Decimal(18, 2)
+
+  // ✅ reverse link (optional but best)
+  siteExpense SiteExpense? @relation("StaffExpenseToSiteExpense")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
