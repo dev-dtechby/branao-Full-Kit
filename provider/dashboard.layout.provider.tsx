@@ -55,7 +55,7 @@ const DashBoardLayoutProvider = ({ children, trans }: { children: React.ReactNod
           </div>
         </div>
         <Footer handleOpenSearch={() => setOpen(true)} />
-        {/* <ThemeCustomize /> */}
+        <ThemeCustomize />
       </>
     );
   }
@@ -83,7 +83,7 @@ const DashBoardLayoutProvider = ({ children, trans }: { children: React.ReactNod
           </div>
         </div>
         <Footer handleOpenSearch={() => setOpen(true)} />
-        {/* <ThemeCustomize /> */}
+        <ThemeCustomize />
       </>
     );
   }
@@ -118,7 +118,7 @@ const DashBoardLayoutProvider = ({ children, trans }: { children: React.ReactNod
           </div>
         </div>
         <Footer handleOpenSearch={() => setOpen(true)} />
-        {/* <ThemeCustomize /> */}
+        <ThemeCustomize />
       </>
     );
   }
@@ -151,7 +151,7 @@ const DashBoardLayoutProvider = ({ children, trans }: { children: React.ReactNod
         </div>
       </div>
       <Footer handleOpenSearch={() => setOpen(true)} />
-      {/* {isMobile && <ThemeCustomize />} */}
+      {isMobile && <ThemeCustomize />}
     </>
   );
 };
