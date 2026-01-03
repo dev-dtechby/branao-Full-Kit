@@ -24,7 +24,7 @@ const NavTools = ({ isDesktop, isMobile, sidebarType }: { isDesktop: boolean; is
 
       <ThemeButton />
       {/* <Inbox /> */}
-      <NotificationMessage />
+      {/* <NotificationMessage /> */}
 
       <div className="ltr:pl-2 rtl:pr-2">
         <ProfileInfo />
