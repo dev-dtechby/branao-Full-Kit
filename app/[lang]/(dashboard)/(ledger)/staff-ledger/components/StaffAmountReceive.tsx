@@ -26,7 +26,7 @@ interface Props {
   onClose: () => void;
 }
 
-/* ================= API BASE ================= */
+/* ================= API ================= */
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
@@ -57,10 +57,10 @@ export default function StaffAmountReceive({
 
   /* ================= SAVE ================= */
   const handleSave = async () => {
-    if (!date || !form.through || !form.amount) {
+    if (!date || !form.amount) {
       toast({
-        title: "❌ Required fields missing",
-        description: "Date, Through & Amount are mandatory",
+        title: "❌ Required",
+        description: "Date & Amount are mandatory",
       });
       return;
     }
@@ -70,22 +70,22 @@ export default function StaffAmountReceive({
 
       const payload = {
         staffLedgerId: staffLedger.id,
-        receiptDate: date,
-        through: form.through,
-        particulars: form.particulars,
-        inAmount: Number(form.amount), // ✅ IMPORTANT
+        expenseDate: date.toISOString(),
+        expenseTitle: "Amount Received",
+        summary: form.particulars,
+        remark: form.through, // 🔥 through stored as text
+        inAmount: Number(form.amount), // 🔥 IN AMOUNT
       };
 
-      console.log("Amount Receive Payload", payload);
-
-      const res = await fetch(`${BASE_URL}/api/staff-receipt`, {
+      const res = await fetch(`${BASE_URL}/api/staff-expense`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) throw new Error();
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message);
 
       toast({
         title: "✅ Amount Received Saved",
@@ -94,10 +94,10 @@ export default function StaffAmountReceive({
 
       handleReset();
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       toast({
         title: "❌ Error",
-        description: "Failed to save received amount",
+        description: err.message || "Failed to save amount",
       });
     } finally {
       setLoading(false);
@@ -117,43 +117,45 @@ export default function StaffAmountReceive({
         {/* Date */}
         <div className="space-y-1">
           <Label>Date</Label>
-          <Popover>
-            <PopoverTrigger className="w-full">
-              <div
-                className={cn(
-                  "flex items-center justify-between w-full rounded-md border px-3 py-2 bg-background cursor-pointer text-sm"
-                )}
+            <Popover>
+              <PopoverTrigger className="w-full">
+                <div
+                  className={cn(
+                    "flex items-center justify-between w-full rounded-md border px-3 py-2 bg-background cursor-pointer text-sm"
+                  )}
+                >
+                  {date ? date.toLocaleDateString() : "Pick a date"}
+                  <CalendarIcon className="h-4 w-4 opacity-50" />
+                </div>
+              </PopoverTrigger>
+
+              <PopoverContent
+                side="bottom"
+                align="start"
+                sideOffset={8}
+                className="z-[9999] p-0 bg-background border shadow-lg"
               >
-                {date ? date.toLocaleDateString() : "Pick a date"}
-                <CalendarIcon className="h-4 w-4 opacity-50" />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="p-0">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+
         </div>
 
-        {/* Through */}
+        {/* Through (TEXT INPUT) */}
         <div className="space-y-1">
           <Label>Through</Label>
-          <select
-            className="w-full border rounded-md px-3 py-2 bg-background text-sm"
+          <Input
+            placeholder="Cash / UPI / Bank / Any remark"
             value={form.through}
             onChange={(e) =>
               setForm({ ...form, through: e.target.value })
             }
-          >
-            <option value="">Select Through</option>
-            <option value="Cash">Cash</option>
-            <option value="UPI">UPI</option>
-            <option value="Bank">Bank Transfer</option>
-          </select>
+          />
         </div>
       </div>
 
@@ -161,7 +163,7 @@ export default function StaffAmountReceive({
       <div className="space-y-1">
         <Label>Particulars</Label>
         <Input
-          placeholder="Enter particulars"
+          placeholder="Received against advance / settlement etc."
           value={form.particulars}
           onChange={(e) =>
             setForm({ ...form, particulars: e.target.value })
@@ -171,7 +173,7 @@ export default function StaffAmountReceive({
 
       {/* ===== Amount In ===== */}
       <div className="space-y-1">
-        <Label className="text-green-600">Received / In</Label>
+        <Label className="text-green-600">Amount (In)</Label>
         <Input
           className="border-green-500"
           placeholder="Enter received amount"

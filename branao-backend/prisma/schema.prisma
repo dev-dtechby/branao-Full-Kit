@@ -328,20 +328,17 @@ model StaffExpense {
   staffLedgerId String
   staffLedger   Ledger @relation(fields: [staffLedgerId], references: [id])
 
-  siteId String
-  site   Site   @relation(fields: [siteId], references: [id])
+  siteId String?
+  site   Site?   @relation(fields: [siteId], references: [id])
 
   expenseDate DateTime
-
   expenseTitle String
   summary      String?
   remark       String?
 
-  amount Decimal @db.Decimal(18, 2)
+  outAmount Decimal? @db.Decimal(18, 2)
+  inAmount  Decimal? @db.Decimal(18, 2)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  @@index([staffLedgerId])
-  @@index([siteId])
 }

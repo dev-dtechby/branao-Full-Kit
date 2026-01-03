@@ -146,28 +146,33 @@ export default function StaffExpEntryForm({
         {/* Date */}
         <div>
           <Label>Date</Label>
-          <Popover>
-            <PopoverTrigger className="w-full">
-              <div
-                className={cn(
-                  "flex items-center justify-between w-full rounded-md border px-3 py-2 bg-background cursor-pointer"
-                )}
+            <Popover>
+              <PopoverTrigger className="w-full">
+                <div
+                  className={cn(
+                    "flex items-center justify-between w-full rounded-md border px-3 py-2 bg-background cursor-pointer"
+                  )}
+                >
+                  {date ? date.toLocaleDateString() : "Pick a date"}
+                  <CalendarIcon className="h-4 w-4 opacity-50" />
+                </div>
+              </PopoverTrigger>
+
+              <PopoverContent
+                side="bottom"
+                align="start"
+                sideOffset={8}
+                className="z-[9999] p-0 bg-background border shadow-lg"
               >
-                {date
-                  ? date.toLocaleDateString()
-                  : "Pick a date"}
-                <CalendarIcon className="h-4 w-4 opacity-50" />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="p-0">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
+                <Calendar
+                  mode="single"
+                  selected={date}
+                  onSelect={setDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+
         </div>
 
         {/* Site */}

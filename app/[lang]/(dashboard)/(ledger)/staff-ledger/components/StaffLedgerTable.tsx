@@ -9,16 +9,18 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Pencil, Trash2 } from "lucide-react";
 
 import StaffExpEntryForm from "./StaffExpEntryForm";
 import StaffAmountReceive from "./StaffAmountReceive";
+import EditStaffLedger from "./EditStaffLedger";
+import { StaffExpense } from "./types";
 
 /* ================= TYPES ================= */
 interface Ledger {
@@ -43,6 +45,13 @@ export default function StaffLedgerTable() {
   const [selectedLedger, setSelectedLedger] =
     useState<Ledger | null>(null);
 
+  const [entries, setEntries] = useState<StaffExpense[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // 🔥 Edit row state
+  const [editRow, setEditRow] =
+    useState<StaffExpense | null>(null);
+
   /* ================= FETCH STAFF / SUPERVISOR LEDGERS ================= */
   useEffect(() => {
     fetchStaffLedgers();
@@ -53,154 +62,179 @@ export default function StaffLedgerTable() {
       const res = await fetch(`${BASE_URL}/api/ledgers`, {
         credentials: "include",
       });
-
       const json = await res.json();
 
       const filtered =
         json?.data?.filter(
           (l: Ledger) =>
-            l.ledgerType?.name &&
-            l.ledgerType.name
-              .toLowerCase()
-              .includes("staff")
-            ||
+            l.ledgerType?.name
+              ?.toLowerCase()
+              .includes("staff") ||
             l.ledgerType?.name
               ?.toLowerCase()
               .includes("supervisor")
         ) ?? [];
 
-
       setStaffLedgers(filtered);
     } catch (err) {
-      console.error("Failed to fetch staff ledgers", err);
+      console.error("Failed to fetch ledgers", err);
       setStaffLedgers([]);
     }
   };
 
+  /* ================= FETCH LEDGER ENTRIES ================= */
+  useEffect(() => {
+    if (!selectedLedger?.id) {
+      setEntries([]);
+      return;
+    }
+    fetchEntries(selectedLedger.id);
+  }, [selectedLedger]);
+
+  const fetchEntries = async (staffLedgerId: string) => {
+    try {
+      setLoading(true);
+
+      const res = await fetch(
+        `${BASE_URL}/api/staff-expense?staffLedgerId=${staffLedgerId}`,
+        { credentials: "include" }
+      );
+
+      const json = await res.json();
+      setEntries(json?.data ?? []);
+    } catch (err) {
+      console.error("Failed to fetch ledger entries", err);
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   /* ================= STAFF NAME LIST ================= */
-const staffNameList = useMemo(
-  () =>
-    staffLedgers
-      .map((l) => l.name)
-      .filter(Boolean),
-  [staffLedgers]
-);
+  const staffNameList = useMemo(
+    () => staffLedgers.map((l) => l.name),
+    [staffLedgers]
+  );
+
+  /* ================= RUNNING BALANCE ================= */
+  const rowsWithBalance = useMemo(() => {
+    let balance = 0;
+
+    return [...entries]
+      .sort(
+        (a, b) =>
+          new Date(a.expenseDate).getTime() -
+          new Date(b.expenseDate).getTime()
+      )
+      .map((row) => {
+        balance +=
+          (row.inAmount || 0) - (row.outAmount || 0);
+        return { ...row, balance };
+      });
+  }, [entries]);
 
   /* ================= UI ================= */
   return (
     <>
-      {/* ================= MAIN CARD ================= */}
-      <Card className="p-4 md:p-6 shadow-sm border rounded-xl bg-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-2xl font-semibold">
+      <Card className="p-4 md:p-6 border rounded-xl bg-card">
+        <CardHeader>
+          <CardTitle className="text-2xl">
             Staff Ledger
           </CardTitle>
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* -------- Search + Buttons -------- */}
-          <div className="flex flex-col md:flex-row gap-4 md:items-center">
-            {/* Staff Search */}
+          {/* ===== Search + Buttons ===== */}
+          <div className="flex flex-col md:flex-row gap-4">
             <div className="w-full md:w-1/3">
               <Input
                 placeholder="Search / Select Staff..."
                 value={search}
                 onChange={(e) => {
-                  const value = e.target.value;
-                  setSearch(value);
+                  const val = e.target.value;
+                  setSearch(val);
 
                   const ledger = staffLedgers.find(
-                    (l) => l.name === value
+                    (l) => l.name === val
                   );
 
                   setSelectedLedger(ledger || null);
                 }}
                 list="staff-options"
               />
-
               <datalist id="staff-options">
-                {staffNameList.map((name) => (
-                  <option key={name} value={name} />
+                {staffNameList.map((n) => (
+                  <option key={n} value={n} />
                 ))}
               </datalist>
             </div>
 
-            {/* Buttons */}
-            <div className="flex flex-wrap gap-2 md:ml-auto">
+            <div className="flex gap-2 md:ml-auto flex-wrap">
               <Button
-                onClick={() => setOpenForm("exp")}
                 disabled={!selectedLedger}
+                onClick={() => setOpenForm("exp")}
               >
                 Expense Entry
               </Button>
 
               <Button
                 variant="outline"
-                onClick={() => setOpenForm("received")}
                 disabled={!selectedLedger}
+                onClick={() => setOpenForm("received")}
               >
                 Amount Received
               </Button>
 
-              <Button variant="outline">
+              <Button
+                variant="outline"
+                disabled={!selectedLedger}
+              >
                 Export
               </Button>
             </div>
           </div>
 
-          {/* -------- Staff Info Box -------- */}
+          {/* ===== Staff Info ===== */}
           {selectedLedger && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted rounded-lg border">
+            <div className="grid md:grid-cols-3 gap-4 p-4 border rounded-lg bg-muted">
               <div>
-                <p className="text-xs text-muted-foreground">
-                  Account Of
-                </p>
+                <p className="text-xs">Account Of</p>
                 <p className="font-semibold">
                   {selectedLedger.name}
                 </p>
               </div>
-
               <div>
-                <p className="text-xs text-muted-foreground">
-                  Address
-                </p>
-                <p>
-                  {selectedLedger.address || "—"}
-                </p>
+                <p className="text-xs">Address</p>
+                <p>{selectedLedger.address || "—"}</p>
               </div>
-
               <div>
-                <p className="text-xs text-muted-foreground">
-                  Contact No
-                </p>
-                <p>
-                  {selectedLedger.mobile || "—"}
-                </p>
+                <p className="text-xs">Contact</p>
+                <p>{selectedLedger.mobile || "—"}</p>
               </div>
             </div>
           )}
 
-          {/* -------- Ledger Table Placeholder -------- */}
-          <ScrollArea className="rounded-md border w-full overflow-auto">
-            <table className="min-w-[900px] w-full">
+          {/* ================= LEDGER TABLE ================= */}
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <table
+              className="w-full text-sm"
+              style={{ minWidth: 1200 }}
+            >
               <thead className="bg-default-100">
                 <tr>
-                  <th className="p-3 text-left">Date</th>
-                  <th className="p-3 text-left">Site</th>
-                  <th className="p-3 text-left">Summary</th>
-                  <th className="p-3 text-left">Through</th>
-                  <th className="p-3 text-left text-red-500">
-                    Out
+                  <th className="p-3">Date</th>
+                  <th className="p-3">Site</th>
+                  <th className="p-3">Expense</th>
+                  <th className="p-3">Summary</th>
+                  <th className="p-3">Remark</th>
+                  <th className="p-3 text-green-600">
+                    Received (In)
                   </th>
-                  <th className="p-3 text-left text-green-500">
-                    In
+                  <th className="p-3 text-red-500">
+                    Payment (Out)
                   </th>
-                  <th className="p-3 text-left">
-                    Balance
-                  </th>
-                  <th className="p-3 text-left">
-                    Action
-                  </th>
+                  <th className="p-3">Balance</th>
+                  <th className="p-3">Action</th>
                 </tr>
               </thead>
 
@@ -208,20 +242,67 @@ const staffNameList = useMemo(
                 {!selectedLedger && (
                   <tr>
                     <td
-                      colSpan={8}
-                      className="text-center p-6 text-muted-foreground"
+                      colSpan={9}
+                      className="p-6 text-center text-muted-foreground"
                     >
-                      Please select a staff to view ledger.
+                      Please select a staff ledger
                     </td>
                   </tr>
                 )}
+
+                {loading && (
+                  <tr>
+                    <td colSpan={9} className="p-6 text-center">
+                      Loading...
+                    </td>
+                  </tr>
+                )}
+
+                {rowsWithBalance.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="border-t hover:bg-muted/50"
+                  >
+                    <td className="p-3">
+                      {new Date(row.expenseDate).toLocaleDateString()}
+                    </td>
+                    <td className="p-3">
+                      {row.site?.siteName || "—"}
+                    </td>
+                    <td className="p-3">
+                      {row.expenseTitle}
+                    </td>
+                    <td className="p-3">
+                      {row.summary || "—"}
+                    </td>
+                    <td className="p-3">
+                      {row.remark || "—"}
+                    </td>
+                    <td className="p-3 text-green-600">
+                      {row.inAmount ?? ""}
+                    </td>
+                    <td className="p-3 text-red-500">
+                      {row.outAmount ?? ""}
+                    </td>
+                    <td className="p-3 font-semibold">
+                      {row.balance}
+                    </td>
+                    <td className="p-3 flex gap-2">
+                      <Pencil
+                        className="h-4 w-4 cursor-pointer text-blue-500"
+                        onClick={() => setEditRow(row)}
+                      />
+                      <Trash2 className="h-4 w-4 cursor-pointer text-red-500" />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-          </ScrollArea>
+          </div>
         </CardContent>
       </Card>
 
-      {/* ================= EXPENSE ENTRY POPUP ================= */}
+      {/* ===== Expense Popup ===== */}
       <Dialog
         open={openForm === "exp"}
         onOpenChange={() => setOpenForm(null)}
@@ -230,17 +311,19 @@ const staffNameList = useMemo(
           <DialogHeader>
             <DialogTitle>Expense Entry</DialogTitle>
           </DialogHeader>
-
           {selectedLedger && (
             <StaffExpEntryForm
               staffLedger={selectedLedger}
-              onClose={() => setOpenForm(null)}
+              onClose={() => {
+                setOpenForm(null);
+                fetchEntries(selectedLedger.id);
+              }}
             />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* ================= AMOUNT RECEIVED POPUP ================= */}
+      {/* ===== Received Popup ===== */}
       <Dialog
         open={openForm === "received"}
         onOpenChange={() => setOpenForm(null)}
@@ -249,17 +332,37 @@ const staffNameList = useMemo(
           <DialogHeader>
             <DialogTitle>Amount Received</DialogTitle>
           </DialogHeader>
-
           {selectedLedger && (
             <StaffAmountReceive
               staffLedger={{
                 id: selectedLedger.id,
                 name: selectedLedger.name,
               }}
-              onClose={() => setOpenForm(null)}
+              onClose={() => {
+                setOpenForm(null);
+                fetchEntries(selectedLedger.id);
+              }}
             />
           )}
+        </DialogContent>
+      </Dialog>
 
+      {/* ===== Edit Popup ===== */}
+      <Dialog
+        open={!!editRow}
+        onOpenChange={() => setEditRow(null)}
+      >
+        <DialogContent className="max-w-xl">
+          {editRow && (
+            <EditStaffLedger
+              row={editRow}
+              onClose={() => setEditRow(null)}
+              onUpdated={() =>
+                selectedLedger &&
+                fetchEntries(selectedLedger.id)
+              }
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>
