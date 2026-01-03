@@ -21,11 +21,7 @@ export const createStaffExpense = async (
     } = req.body;
 
     /* ================= VALIDATION ================= */
-    if (
-      !staffLedgerId ||
-      !expenseTitle ||
-      (!outAmount && !inAmount)
-    ) {
+    if (!staffLedgerId || !expenseTitle || (!outAmount && !inAmount)) {
       return res.status(400).json({
         success: false,
         message:
@@ -37,6 +33,25 @@ export const createStaffExpense = async (
       return res.status(400).json({
         success: false,
         message: "Only one of outAmount or inAmount is allowed",
+      });
+    }
+
+    const parsedOut =
+      outAmount !== undefined && outAmount !== null
+        ? Number(outAmount)
+        : null;
+    const parsedIn =
+      inAmount !== undefined && inAmount !== null
+        ? Number(inAmount)
+        : null;
+
+    if (
+      (parsedOut !== null && isNaN(parsedOut)) ||
+      (parsedIn !== null && isNaN(parsedIn))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid amount value",
       });
     }
 
@@ -53,52 +68,47 @@ export const createStaffExpense = async (
       });
     }
 
-    /* ================= BUILD DATA OBJECT ================= */
+    /* ================= BUILD DATA ================= */
     const data: any = {
-      staffLedger: {
-        connect: { id: staffLedgerId },
-      },
+      staffLedger: { connect: { id: staffLedgerId } },
       expenseDate: expenseDate
         ? new Date(expenseDate)
         : new Date(),
       expenseTitle,
       summary: summary || null,
       remark: remark || null,
-      outAmount: outAmount ? Number(outAmount) : null,
-      inAmount: inAmount ? Number(inAmount) : null,
+      outAmount: parsedOut,
+      inAmount: parsedIn,
     };
 
     if (siteId) {
-      data.site = {
-        connect: { id: siteId },
-      };
+      data.site = { connect: { id: siteId } };
     }
 
-    /* ================= STAFF EXPENSE ENTRY ================= */
+    /* ================= CREATE STAFF EXPENSE ================= */
     const staffExpense = await prisma.staffExpense.create({
       data,
     });
 
-    /* ================= SITE EXPENSE (ONLY FOR OUT) ================= */
-    if (outAmount && siteId) {
+    /* ================= CREATE SITE EXPENSE (ONLY FOR OUT) ================= */
+    if (parsedOut && siteId) {
       await prisma.siteExpense.create({
         data: {
-          site: {
-            connect: { id: siteId },
-          },
+          site: { connect: { id: siteId } },
           expenseDate: expenseDate
             ? new Date(expenseDate)
             : new Date(),
           expenseTitle,
           summary: summary || expenseTitle,
           paymentDetails: staffLedger.name,
-          amount: Number(outAmount),
+          amount: parsedOut,
         },
       });
     }
 
     return res.json({
       success: true,
+      message: "Staff expense created successfully",
       data: staffExpense,
     });
   } catch (error) {
@@ -111,7 +121,7 @@ export const createStaffExpense = async (
 };
 
 /* ======================================================
-   GET STAFF LEDGER ENTRIES (FOR TABLE VIEW)
+   GET STAFF LEDGER ENTRIES
    ====================================================== */
 export const getStaffLedgerEntries = async (
   req: Request,
@@ -128,19 +138,11 @@ export const getStaffLedgerEntries = async (
     }
 
     const entries = await prisma.staffExpense.findMany({
-      where: {
-        staffLedgerId, // 🔥 CRITICAL FILTER
-      },
+      where: { staffLedgerId },
       include: {
-        site: {
-          select: {
-            siteName: true,
-          },
-        },
+        site: { select: { siteName: true } },
       },
-      orderBy: {
-        expenseDate: "asc",
-      },
+      orderBy: { expenseDate: "asc" },
     });
 
     return res.json({
@@ -165,7 +167,6 @@ export const updateStaffExpense = async (
 ) => {
   try {
     const { id } = req.params;
-
     const {
       expenseDate,
       siteId,
@@ -176,10 +177,10 @@ export const updateStaffExpense = async (
       inAmount,
     } = req.body;
 
-    if (!id) {
+    if (!id || !expenseTitle) {
       return res.status(400).json({
         success: false,
-        message: "Expense id is required",
+        message: "Expense id and title are required",
       });
     }
 
@@ -201,6 +202,25 @@ export const updateStaffExpense = async (
       });
     }
 
+    const parsedOut =
+      outAmount !== undefined && outAmount !== null
+        ? Number(outAmount)
+        : null;
+    const parsedIn =
+      inAmount !== undefined && inAmount !== null
+        ? Number(inAmount)
+        : null;
+
+    if (
+      (parsedOut !== null && isNaN(parsedOut)) ||
+      (parsedIn !== null && isNaN(parsedIn))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid amount value",
+      });
+    }
+
     const data: any = {
       expenseDate: expenseDate
         ? new Date(expenseDate)
@@ -208,18 +228,14 @@ export const updateStaffExpense = async (
       expenseTitle,
       summary: summary ?? null,
       remark: remark ?? null,
-      outAmount: outAmount ? Number(outAmount) : null,
-      inAmount: inAmount ? Number(inAmount) : null,
+      outAmount: parsedOut,
+      inAmount: parsedIn,
     };
 
     if (siteId) {
-      data.site = {
-        connect: { id: siteId },
-      };
+      data.site = { connect: { id: siteId } };
     } else {
-      data.site = {
-        disconnect: true,
-      };
+      data.site = { disconnect: true };
     }
 
     const updated = await prisma.staffExpense.update({
@@ -229,6 +245,7 @@ export const updateStaffExpense = async (
 
     return res.json({
       success: true,
+      message: "Staff expense updated successfully",
       data: updated,
     });
   } catch (error) {
