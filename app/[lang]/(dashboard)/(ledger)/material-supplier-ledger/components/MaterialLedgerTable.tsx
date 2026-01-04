@@ -1,49 +1,200 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Download, Plus, Edit, Trash2 } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import MaterialForm from "../../../(purchase)/material-purchase-entry/components/MaterialForm";
+
+/* ================= API BASE ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+const SITE_API = `${BASE_URL}/api/sites`;
+const SUPPLIER_API = `${BASE_URL}/api/material-suppliers`;
+const LEDGER_API = `${BASE_URL}/api/material-supplier-ledger`;
+
+/* ================= TYPES ================= */
+type Site = { id: string; siteName: string };
+
+type Supplier = {
+  id: string;
+  name: string;
+  contactNo?: string | null;
+};
+
+type LedgerRow = {
+  id: string;
+  entryDate: string; // ISO
+  site?: { id: string; siteName: string } | null;
+
+  receiptNo?: string | null;
+  parchiPhoto?: string | null;
+  otp?: string | null;
+
+  vehicleNo?: string | null;
+  vehiclePhoto?: string | null;
+
+  material: string;
+  size?: string | null;
+
+  qty: number;
+  rate: number;
+
+  royaltyQty?: number | null;
+  royaltyRate?: number | null;
+  royaltyAmt?: number | null;
+
+  gstPercent?: number | null;
+  taxAmt?: number | null;
+  totalAmt?: number | null;
+
+  paymentAmt?: number | null;
+  balanceAmt?: number | null;
+};
+
+/* ================= HELPERS ================= */
+function formatDate(d: string) {
+  // expected ISO -> dd-mm-yyyy
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return d;
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yy = dt.getFullYear();
+  return `${dd}-${mm}-${yy}`;
+}
+
+function n(v: any) {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+}
 
 export default function MaterialLedgerTable() {
-  const supplierList = ["Hemant Chopda", "Kanker Supplier", "Rasani Supplier"];
-  const materialTypes = ["Sand", "Limestone", "Murum", "Other"];
+  /* ================= MASTER DATA ================= */
+  const [sites, setSites] = useState<Site[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  const [search, setSearch] = useState("");
-  const [selectedSupplier, setSelectedSupplier] = useState("");
+  /* ================= FILTERS ================= */
+  const [supplierQuery, setSupplierQuery] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
+
   const [contact, setContact] = useState("");
 
-  // Dummy Data
-  const ledgerRows = [
-    {
-      date: "21-11-2025",
-      site: "Dev Site",
-      receipt: "RC-889",
-      parchi: "parchi.jpg",
-      otp: "4589",
-      vehicleNo: "CG04-5521",
-      vehiclePhoto: "pic1.jpg",
-      material: "Sand",
-      size: "Medium",
-      qty: 12,
-      rate: 550,
-      amount: 6600,
-      royaltyQty: 12,
-      royaltyRate: 50,
-      royaltyAmount: 600,
-      gst: 18,
-      taxAmt: 1296,
-      grandTotal: 8496,
-      payment: 8000,
-      balance: 496,
-    },
-  ];
+  /* ================= LEDGER ================= */
+  const [rows, setRows] = useState<LedgerRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [openPurchase, setOpenPurchase] = useState(false);
 
+  /* ================= LOAD SITES + SUPPLIERS ================= */
+  useEffect(() => {
+    (async () => {
+      try {
+        const [sRes, supRes] = await Promise.all([
+          fetch(SITE_API, { cache: "no-store" }),
+          fetch(SUPPLIER_API, { cache: "no-store" }),
+        ]);
+
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          setSites(Array.isArray(sData) ? sData : sData?.data || []);
+        }
+
+        if (supRes.ok) {
+          const supData = await supRes.json();
+          setSuppliers(Array.isArray(supData) ? supData : supData?.data || []);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, []);
+
+  /* ================= SUPPLIER SUGGESTIONS ================= */
+  const supplierSuggestions = useMemo(() => {
+    const q = supplierQuery.trim().toLowerCase();
+    if (!q) return suppliers.slice(0, 20);
+    return suppliers
+      .filter((x) => x.name.toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [supplierQuery, suppliers]);
+
+  function applySupplierByName(name: string) {
+    const found = suppliers.find(
+      (s) => s.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (found) {
+      setSelectedSupplierId(found.id);
+      setSupplierQuery(found.name);
+      setContact(found.contactNo || "");
+      return true;
+    }
+    return false;
+  }
+
+  /* ================= LOAD LEDGER ================= */
+  async function loadLedger() {
+    if (!selectedSupplierId) {
+      setRows([]);
+      return;
+    }
+    try {
+      setLoading(true);
+
+      const params = new URLSearchParams();
+      params.set("supplierId", selectedSupplierId);
+      if (selectedSiteId) params.set("siteId", selectedSiteId);
+
+      const res = await fetch(`${LEDGER_API}?${params.toString()}`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        setRows([]);
+        return;
+      }
+
+      const data = await res.json();
+      setRows(Array.isArray(data) ? data : data?.data || []);
+    } catch (e) {
+      console.error(e);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSupplierId, selectedSiteId]);
+
+  /* ================= TOTALS ================= */
+  const totals = useMemo(() => {
+    const totalPay = rows.reduce((a, r) => a + n(r.paymentAmt), 0);
+    const totalAmt = rows.reduce((a, r) => a + n(r.totalAmt), 0);
+    const balance = totalAmt - totalPay;
+    return { totalAmt, totalPay, balance };
+  }, [rows]);
+
+  /* ================= MATERIAL LIST BOX (optional summary) ================= */
+  const materialSummary = useMemo(() => {
+    const map = new Map<string, { qty: number; amt: number }>();
+    for (const r of rows) {
+      const key = (r.material || "Other").toString();
+      const prev = map.get(key) || { qty: 0, amt: 0 };
+      prev.qty += n(r.qty);
+      prev.amt += n(r.totalAmt ?? (n(r.qty) * n(r.rate)));
+      map.set(key, prev);
+    }
+    return map;
+  }, [rows]);
+
+  /* ================= UI ================= */
   return (
     <Card className="p-6 shadow-sm border rounded-xl">
-      {/* ---------------- TOP HEADER ---------------- */}
       <CardHeader>
         <CardTitle className="text-2xl font-semibold text-default-900">
           Material Supplier Ledger
@@ -53,54 +204,94 @@ export default function MaterialLedgerTable() {
       <CardContent className="space-y-6">
         {/* ---------------- FILTER BAR ---------------- */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-          <Input
-            placeholder="Search Supplier..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          {/* Supplier Search (Staff-ledger style) */}
+          <div className="w-full">
+            <Input
+              placeholder="Search Supplier..."
+              value={supplierQuery}
+              onChange={(e) => {
+                setSupplierQuery(e.target.value);
+                // typing -> don’t force selection
+                if (!e.target.value) {
+                  setSelectedSupplierId("");
+                  setContact("");
+                }
+              }}
+              onBlur={() => {
+                // if user typed exact name -> auto select
+                if (!selectedSupplierId) applySupplierByName(supplierQuery);
+              }}
+              list="supplier_datalist"
+            />
+            <datalist id="supplier_datalist">
+              {supplierSuggestions.map((s) => (
+                <option
+                  key={s.id}
+                  value={s.name}
+                  onClick={() => applySupplierByName(s.name)}
+                />
+              ))}
+            </datalist>
 
+            {/* Small helper row */}
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              {selectedSupplierId ? "Supplier selected" : "Type & select supplier"}
+            </div>
+          </div>
+
+          {/* Site Dropdown */}
           <select
-            value={selectedSupplier}
-            onChange={(e) => setSelectedSupplier(e.target.value)}
-            className="border px-3 py-2 rounded-md bg-background text-sm"
+            value={selectedSiteId}
+            onChange={(e) => setSelectedSiteId(e.target.value)}
+            className="border px-3 py-2 rounded-md bg-background text-sm h-10"
           >
-            <option value="">Select Account</option>
-            {supplierList.map((v, i) => (
-              <option key={i}>{v}</option>
+            <option value="">All Sites</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.siteName}
+              </option>
             ))}
           </select>
 
+          {/* Contact */}
           <Input
             placeholder="Contact Number"
             value={contact}
             onChange={(e) => setContact(e.target.value)}
+            disabled
           />
 
-          <Button className="flex items-center gap-2">
-            <Plus className="h-4 w-4" /> Add Supplier
+          {/* Purchase Button */}
+          <Button
+            className="flex items-center gap-2"
+            disabled={!selectedSupplierId}
+            onClick={() => setOpenPurchase(true)}
+          >
+            <Plus className="h-4 w-4" /> Purchase
           </Button>
+
         </div>
 
         {/* ---------------- TOTAL CARDS ---------------- */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="p-4 rounded-lg bg-green-100 dark:bg-green-900">
-            <p className="text-sm">Total Received</p>
+            <p className="text-sm">Total Amount</p>
             <p className="text-2xl font-bold text-green-600 dark:text-green-300">
-              ₹ 0
+              ₹ {totals.totalAmt.toFixed(2)}
             </p>
           </div>
 
           <div className="p-4 rounded-lg bg-red-100 dark:bg-red-900">
             <p className="text-sm">Total Pay</p>
             <p className="text-2xl font-bold text-red-600 dark:text-red-300">
-              ₹ 0
+              ₹ {totals.totalPay.toFixed(2)}
             </p>
           </div>
 
           <div className="p-4 rounded-lg bg-blue-100 dark:bg-blue-900">
             <p className="text-sm">Balance</p>
             <p className="text-2xl font-bold text-blue-600 dark:text-blue-300">
-              ₹ 0
+              ₹ {totals.balance.toFixed(2)}
             </p>
           </div>
         </div>
@@ -110,107 +301,195 @@ export default function MaterialLedgerTable() {
           <p className="font-semibold mb-2">Material List</p>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            {materialTypes.map((m) => (
-              <div
-                key={m}
-                className="flex gap-2 items-center border px-3 py-2 rounded-md"
-              >
-                <span className="font-medium w-20">{m}</span>
-                <Input placeholder="Qty" className="w-20 h-7 text-xs" />
-                <Input placeholder="Amt" className="w-20 h-7 text-xs" />
-              </div>
-            ))}
+            {["Sand", "Limestone", "Murum", "Other"].map((m) => {
+              const v = materialSummary.get(m) || { qty: 0, amt: 0 };
+              return (
+                <div
+                  key={m}
+                  className="flex gap-2 items-center border px-3 py-2 rounded-md"
+                >
+                  <span className="font-medium w-20">{m}</span>
+                  <Input
+                    value={v.qty ? String(v.qty) : ""}
+                    placeholder="Qty"
+                    className="w-20 h-7 text-xs"
+                    disabled
+                  />
+                  <Input
+                    value={v.amt ? String(Math.round(v.amt)) : ""}
+                    placeholder="Amt"
+                    className="w-24 h-7 text-xs"
+                    disabled
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
 
         {/* ---------------- EXPORT BUTTON ---------------- */}
-        <div className="flex justify-end">
-          <Button variant="outline" className="flex gap-2">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            className="flex gap-2"
+            disabled={!rows.length}
+            onClick={() => {
+              // next: export to excel/pdf
+              console.log("export ledger");
+            }}
+          >
             <Download className="h-4 w-4" /> Export Ledger
           </Button>
         </div>
 
         {/* ---------------- LEDGER TABLE ---------------- */}
-        <ScrollArea className="w-full max-h-[65vh] rounded-md border overflow-auto">
-          <div className="min-w-[1700px] whitespace-nowrap">
-            <table className="w-full table-auto border-collapse text-sm">
-              <thead className="bg-default-100 text-default-700 sticky top-0 z-20">
-                <tr>
-                  {[
-                    "DATE",
-                    "Site",
-                    "Receipt No",
-                    "Parchi Photo",
-                    "OTP",
-                    "Vehicle No",
-                    "Vehicle Photo",
-                    "Material",
-                    "Size",
-                    "Qty",
-                    "Rate",
-                    "Amt",
-                    "Royalty Qty",
-                    "Royalty Rate",
-                    "Royalty Amt",
-                    "GST",
-                    "Tax Amt",
-                    "Grand Total",
-                    "Payment",
-                    "Balance",
-                    "Action",
-                  ].map((head) => (
-                    <th key={head} className="p-3 text-left">
-                      {head}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+        <div className="rounded-md border overflow-hidden">
+          {/* vertical scroll */}
+          <div className="max-h-[65vh] overflow-y-auto">
+            {/* horizontal scroll */}
+            <div style={{ overflowX: "auto" }}>
+              <div style={{ minWidth: 1800 }}>
+                <table className="w-full table-auto border-collapse text-sm">
+                  <thead className="bg-default-100 text-default-700 sticky top-0 z-20">
+                    <tr>
+                      {[
+                        "DATE",
+                        "Site",
+                        "Receipt No",
+                        "Parchi Photo",
+                        "OTP",
+                        "Vehicle No",
+                        "Vehicle Photo",
+                        "Material",
+                        "Size",
+                        "Qty",
+                        "Rate",
+                        "Royalty Qty",
+                        "Royalty Rate",
+                        "Royalty Amt",
+                        "GST",
+                        "Tax Amt",
+                        "Total",
+                        "Payment",
+                        "Balance",
+                        "Action",
+                      ].map((head) => (
+                        <th key={head} className="p-3 text-left whitespace-nowrap">
+                          {head}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
 
-              <tbody>
-                {ledgerRows.map((row, i) => (
-                  <tr key={i} className="border-t hover:bg-default-50">
-                    <td className="p-3">{row.date}</td>
-                    <td className="p-3">{row.site}</td>
-                    <td className="p-3">{row.receipt}</td>
-                    <td className="p-3 underline text-primary cursor-pointer">
-                      {row.parchi}
-                    </td>
-                    <td className="p-3">{row.otp}</td>
-                    <td className="p-3">{row.vehicleNo}</td>
-                    <td className="p-3 underline text-primary cursor-pointer">
-                      {row.vehiclePhoto}
-                    </td>
-                    <td className="p-3">{row.material}</td>
-                    <td className="p-3">{row.size}</td>
-                    <td className="p-3">{row.qty}</td>
-                    <td className="p-3">₹ {row.rate}</td>
-                    <td className="p-3">₹ {row.amount}</td>
-                    <td className="p-3">{row.royaltyQty}</td>
-                    <td className="p-3">₹ {row.royaltyRate}</td>
-                    <td className="p-3">₹ {row.royaltyAmount}</td>
-                    <td className="p-3">{row.gst}%</td>
-                    <td className="p-3">₹ {row.taxAmt}</td>
-                    <td className="p-3 font-semibold">₹ {row.grandTotal}</td>
-                    <td className="p-3">{row.payment}</td>
-                    <td className="p-3">{row.balance}</td>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td className="p-4 text-muted-foreground" colSpan={20}>
+                          Loading...
+                        </td>
+                      </tr>
+                    ) : !rows.length ? (
+                      <tr>
+                        <td className="p-4 text-muted-foreground" colSpan={20}>
+                          No data
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row) => (
+                        <tr key={row.id} className="border-t hover:bg-default-50">
+                          <td className="p-3">{formatDate(row.entryDate)}</td>
+                          <td className="p-3">{row.site?.siteName || "-"}</td>
+                          <td className="p-3">{row.receiptNo || "-"}</td>
+                          <td className="p-3">
+                            {row.parchiPhoto ? (
+                              <a
+                                className="underline text-primary"
+                                href={row.parchiPhoto}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                View
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="p-3">{row.otp || "-"}</td>
+                          <td className="p-3">{row.vehicleNo || "-"}</td>
+                          <td className="p-3">
+                            {row.vehiclePhoto ? (
+                              <a
+                                className="underline text-primary"
+                                href={row.vehiclePhoto}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                View
+                              </a>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
 
-                    <td className="p-3 flex gap-2">
-                      <Button size="icon" variant="outline">
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                          <td className="p-3">{row.material}</td>
+                          <td className="p-3">{row.size || "-"}</td>
+                          <td className="p-3">{row.qty}</td>
+                          <td className="p-3">₹ {n(row.rate).toFixed(2)}</td>
 
-                      <Button size="icon" variant="outline">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                          <td className="p-3">{row.royaltyQty ?? "-"}</td>
+                          <td className="p-3">
+                            {row.royaltyRate != null ? `₹ ${n(row.royaltyRate).toFixed(2)}` : "-"}
+                          </td>
+                          <td className="p-3">
+                            {row.royaltyAmt != null ? `₹ ${n(row.royaltyAmt).toFixed(2)}` : "-"}
+                          </td>
+
+                          <td className="p-3">
+                            {row.gstPercent != null ? `${n(row.gstPercent)}%` : "-"}
+                          </td>
+                          <td className="p-3">
+                            {row.taxAmt != null ? `₹ ${n(row.taxAmt).toFixed(2)}` : "-"}
+                          </td>
+                          <td className="p-3 font-semibold">
+                            {row.totalAmt != null ? `₹ ${n(row.totalAmt).toFixed(2)}` : "-"}
+                          </td>
+                          <td className="p-3">
+                            {row.paymentAmt != null ? `₹ ${n(row.paymentAmt).toFixed(2)}` : "-"}
+                          </td>
+                          <td className="p-3">
+                            {row.balanceAmt != null ? `₹ ${n(row.balanceAmt).toFixed(2)}` : "-"}
+                          </td>
+
+                          <td className="p-3">
+                            <div className="flex gap-2">
+                              <Button size="icon" variant="outline">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button size="icon" variant="outline">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
+        </div>
+          <Dialog open={openPurchase} onOpenChange={setOpenPurchase}>
+          <DialogContent className="!p-0 overflow-hidden !h-[92vh] max-w-5xl">
+            {/* Scroll fix inside modal */}
+            <div className="flex flex-col h-full min-h-0">
+              <div className="flex-1 min-h-0 overflow-auto p-4">
+                <MaterialForm />
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
       </CardContent>
     </Card>
   );

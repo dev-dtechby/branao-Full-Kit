@@ -59,6 +59,12 @@ model Site {
   ledgers       Ledger[]
   staffExpenses StaffExpense[]
 
+  // ✅ Material Purchase / Supplier Ledger Entries (Site wise)
+  materialSupplierLedgers MaterialSupplierLedger[] @relation("SiteMaterialSupplierLedgers")
+
+  // ✅ NEW: Site-wise Unified Transactions (All modules impact)
+  siteTransactions SiteTransaction[]
+
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
@@ -149,7 +155,6 @@ model SiteExpense {
   @@index([siteId])
   @@index([expenseDate])
   @@index([isDeleted])
-  // ✅ helpful for future lookup/filter
   @@index([staffExpenseId])
 }
 
@@ -307,10 +312,14 @@ model Ledger {
   address String?
   mobile  String?
 
-  openingBalance Decimal?       @db.Decimal(18, 2)
-  closingBalance Decimal?       @db.Decimal(18, 2)
+  openingBalance Decimal? @db.Decimal(18, 2)
+  closingBalance Decimal? @db.Decimal(18, 2)
   remark         String?
-  staffExpenses  StaffExpense[]
+
+  staffExpenses StaffExpense[]
+
+  // ✅ Material Supplier Ledger entries (Party-wise)
+  materialSupplierLedgers MaterialSupplierLedger[] @relation("LedgerMaterialSupplierLedgers")
 
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
@@ -349,4 +358,122 @@ model StaffExpense {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+////////////////////////////////////////////////
+/// ============ MATERIAL SUPPLIER LEDGER (TRANSACTIONS) ============
+////////////////////////////////////////////////
+model MaterialSupplierLedger {
+  id String @id @default(cuid())
+
+  entryDate    DateTime
+  receiptNo    String?
+  parchiPhoto  String? // Cloudinary secureUrl
+  otp          String? // if needed
+  vehicleNo    String?
+  vehiclePhoto String? // Cloudinary secureUrl
+
+  material String
+  size     String?
+  qty      Decimal @db.Decimal(12, 3)
+  rate     Decimal @db.Decimal(12, 2)
+
+  royaltyQty  Decimal? @db.Decimal(12, 3)
+  royaltyRate Decimal? @db.Decimal(12, 2)
+  royaltyAmt  Decimal? @db.Decimal(12, 2)
+
+  gstPercent Decimal? @db.Decimal(5, 2)
+  taxAmt     Decimal? @db.Decimal(12, 2)
+  totalAmt   Decimal? @db.Decimal(12, 2)
+
+  paymentAmt Decimal? @db.Decimal(12, 2)
+  balanceAmt Decimal? @db.Decimal(12, 2)
+
+  remarks String?
+
+  // ✅ UNIVERSAL PARTY via Ledger
+  ledgerId String
+
+  // ✅ Site (keep optional if you want; make mandatory if "always site-based")
+  siteId String?
+
+  ledger Ledger @relation("LedgerMaterialSupplierLedgers", fields: [ledgerId], references: [id])
+
+  site Site? @relation("SiteMaterialSupplierLedgers", fields: [siteId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ledgerId])
+  @@index([siteId])
+  @@index([entryDate])
+}
+
+////////////////////////////////////////////////
+/// =============== MATERIAL MASTER ================
+////////////////////////////////////////////////
+model MaterialMaster {
+  id   String @id @default(cuid())
+  name String @unique
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isDeleted])
+  @@index([name])
+}
+
+////////////////////////////////////////////////
+/// ============ SITE TRANSACTION (UNIFIED) ============
+////////////////////////////////////////////////
+enum SiteTxnSource {
+  SITE_EXPENSE
+  SITE_RECEIPT
+  STAFF_EXPENSE
+  MATERIAL_PURCHASE
+  VOUCHER
+}
+
+enum SiteTxnNature {
+  DEBIT // cost
+  CREDIT // income
+}
+
+model SiteTransaction {
+  id String @id @default(cuid())
+
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  txnDate  DateTime
+  source   SiteTxnSource
+  sourceId String // original record id (e.g. SiteExpense.id)
+  nature   SiteTxnNature
+  amount   Decimal @db.Decimal(18, 2)
+
+  title   String?
+  remarks String?
+  meta    Json?
+
+  // ✅ keep same soft delete pattern
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([siteId])
+  @@index([txnDate])
+  @@index([siteId, txnDate])
+  @@index([source, sourceId])
+
+  // ✅ NEW (IMPORTANT): for upsert (source+sourceId is unique)
+  @@unique([source, sourceId])
+
+  @@index([isDeleted])
 }

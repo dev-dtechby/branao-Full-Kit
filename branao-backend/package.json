@@ -3,18 +3,26 @@
   "version": "1.0.0",
   "description": "",
   "main": "dist/server.js",
+  "type": "commonjs",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
+    "prisma:format": "prisma format",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:reset": "prisma migrate reset",
+    "prisma:studio": "prisma studio",
+    "seed": "ts-node prisma/seed.ts",
+    "prisma:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@prisma/client": "^6.19.1",
     "bcryptjs": "^3.0.3",

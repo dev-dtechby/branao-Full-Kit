@@ -1,6 +1,12 @@
 import { Request, Response } from "express";
 import * as service from "./site-exp.service";
 
+const toNumberOrUndefined = (val: any) => {
+  if (val === undefined || val === null || val === "") return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? n : undefined;
+};
+
 /**
  * =========================================================
  * CREATE SITE EXPENSE
@@ -18,15 +24,17 @@ export const createSiteExpense = async (req: Request, res: Response) => {
       amount,
     } = req.body;
 
+    const amt = toNumberOrUndefined(amount);
+
     /* ---------------- VALIDATION ---------------- */
-    if (!siteId || !expenseDate || !amount) {
+    if (!siteId || !expenseDate || amt === undefined) {
       return res.status(400).json({
         success: false,
         message: "siteId, expenseDate and amount are required",
       });
     }
 
-    if (Number(amount) <= 0) {
+    if (amt <= 0) {
       return res.status(400).json({
         success: false,
         message: "Amount must be greater than zero",
@@ -43,7 +51,7 @@ export const createSiteExpense = async (req: Request, res: Response) => {
         expenseTitle,
         expenseSummary,
         paymentDetails,
-        amount: Number(amount),
+        amount: amt,
       },
       userId,
       ip
@@ -132,6 +140,14 @@ export const getExpensesBySite = async (req: Request, res: Response) => {
 export const updateSiteExpense = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "Expense ID is required",
+      });
+    }
+
     const {
       siteId,
       expenseDate,
@@ -141,10 +157,12 @@ export const updateSiteExpense = async (req: Request, res: Response) => {
       amount,
     } = req.body;
 
-    if (!id) {
+    // ✅ amount ko tabhi parse/update karo jab aaya ho
+    const amt = toNumberOrUndefined(amount);
+    if (amount !== undefined && amt === undefined) {
       return res.status(400).json({
         success: false,
-        message: "Expense ID is required",
+        message: "Invalid amount",
       });
     }
 
@@ -159,7 +177,7 @@ export const updateSiteExpense = async (req: Request, res: Response) => {
         expenseTitle,
         expenseSummary,
         paymentDetails,
-        amount: Number(amount),
+        ...(amt !== undefined ? { amount: amt } : {}),
       },
       userId,
       ip
