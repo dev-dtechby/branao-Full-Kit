@@ -9,8 +9,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import MaterialForm from "../../../(purchase)/material-purchase-entry/components/MaterialForm";
 
 /* ================= API BASE ================= */
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
 const SITE_API = `${BASE_URL}/api/sites`;
 const SUPPLIER_API = `${BASE_URL}/api/material-suppliers`;
@@ -57,7 +56,6 @@ type LedgerRow = {
 
 /* ================= HELPERS ================= */
 function formatDate(d: string) {
-  // expected ISO -> dd-mm-yyyy
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return d;
   const dd = String(dt.getDate()).padStart(2, "0");
@@ -86,6 +84,8 @@ export default function MaterialLedgerTable() {
   /* ================= LEDGER ================= */
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  /* ================= PURCHASE MODAL ================= */
   const [openPurchase, setOpenPurchase] = useState(false);
 
   /* ================= LOAD SITES + SUPPLIERS ================= */
@@ -93,8 +93,14 @@ export default function MaterialLedgerTable() {
     (async () => {
       try {
         const [sRes, supRes] = await Promise.all([
-          fetch(SITE_API, { cache: "no-store" }),
-          fetch(SUPPLIER_API, { cache: "no-store" }),
+          fetch(`${SITE_API}?_ts=${Date.now()}`, {
+            cache: "no-store",
+            credentials: "include",
+          }),
+          fetch(`${SUPPLIER_API}?_ts=${Date.now()}`, {
+            cache: "no-store",
+            credentials: "include",
+          }),
         ]);
 
         if (sRes.ok) {
@@ -116,9 +122,7 @@ export default function MaterialLedgerTable() {
   const supplierSuggestions = useMemo(() => {
     const q = supplierQuery.trim().toLowerCase();
     if (!q) return suppliers.slice(0, 20);
-    return suppliers
-      .filter((x) => x.name.toLowerCase().includes(q))
-      .slice(0, 20);
+    return suppliers.filter((x) => x.name.toLowerCase().includes(q)).slice(0, 20);
   }, [supplierQuery, suppliers]);
 
   function applySupplierByName(name: string) {
@@ -133,6 +137,16 @@ export default function MaterialLedgerTable() {
     }
     return false;
   }
+
+  const selectedSupplier = useMemo(
+    () => suppliers.find((s) => s.id === selectedSupplierId) || null,
+    [suppliers, selectedSupplierId]
+  );
+
+  const selectedSite = useMemo(
+    () => sites.find((s) => s.id === selectedSiteId) || null,
+    [sites, selectedSiteId]
+  );
 
   /* ================= LOAD LEDGER ================= */
   async function loadLedger() {
@@ -149,6 +163,7 @@ export default function MaterialLedgerTable() {
 
       const res = await fetch(`${LEDGER_API}?${params.toString()}`, {
         cache: "no-store",
+        credentials: "include",
       });
 
       if (!res.ok) {
@@ -179,14 +194,14 @@ export default function MaterialLedgerTable() {
     return { totalAmt, totalPay, balance };
   }, [rows]);
 
-  /* ================= MATERIAL LIST BOX (optional summary) ================= */
+  /* ================= MATERIAL SUMMARY ================= */
   const materialSummary = useMemo(() => {
     const map = new Map<string, { qty: number; amt: number }>();
     for (const r of rows) {
       const key = (r.material || "Other").toString();
       const prev = map.get(key) || { qty: 0, amt: 0 };
       prev.qty += n(r.qty);
-      prev.amt += n(r.totalAmt ?? (n(r.qty) * n(r.rate)));
+      prev.amt += n(r.totalAmt ?? n(r.qty) * n(r.rate));
       map.set(key, prev);
     }
     return map;
@@ -204,36 +219,29 @@ export default function MaterialLedgerTable() {
       <CardContent className="space-y-6">
         {/* ---------------- FILTER BAR ---------------- */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-          {/* Supplier Search (Staff-ledger style) */}
+          {/* Supplier Search */}
           <div className="w-full">
             <Input
               placeholder="Search Supplier..."
               value={supplierQuery}
               onChange={(e) => {
                 setSupplierQuery(e.target.value);
-                // typing -> don’t force selection
                 if (!e.target.value) {
                   setSelectedSupplierId("");
                   setContact("");
                 }
               }}
               onBlur={() => {
-                // if user typed exact name -> auto select
                 if (!selectedSupplierId) applySupplierByName(supplierQuery);
               }}
               list="supplier_datalist"
             />
             <datalist id="supplier_datalist">
               {supplierSuggestions.map((s) => (
-                <option
-                  key={s.id}
-                  value={s.name}
-                  onClick={() => applySupplierByName(s.name)}
-                />
+                <option key={s.id} value={s.name} />
               ))}
             </datalist>
 
-            {/* Small helper row */}
             <div className="mt-1 text-[11px] text-muted-foreground">
               {selectedSupplierId ? "Supplier selected" : "Type & select supplier"}
             </div>
@@ -254,12 +262,7 @@ export default function MaterialLedgerTable() {
           </select>
 
           {/* Contact */}
-          <Input
-            placeholder="Contact Number"
-            value={contact}
-            onChange={(e) => setContact(e.target.value)}
-            disabled
-          />
+          <Input placeholder="Contact Number" value={contact} disabled />
 
           {/* Purchase Button */}
           <Button
@@ -269,7 +272,6 @@ export default function MaterialLedgerTable() {
           >
             <Plus className="h-4 w-4" /> Purchase
           </Button>
-
         </div>
 
         {/* ---------------- TOTAL CARDS ---------------- */}
@@ -333,10 +335,7 @@ export default function MaterialLedgerTable() {
             variant="outline"
             className="flex gap-2"
             disabled={!rows.length}
-            onClick={() => {
-              // next: export to excel/pdf
-              console.log("export ledger");
-            }}
+            onClick={() => console.log("export ledger")}
           >
             <Download className="h-4 w-4" /> Export Ledger
           </Button>
@@ -344,9 +343,7 @@ export default function MaterialLedgerTable() {
 
         {/* ---------------- LEDGER TABLE ---------------- */}
         <div className="rounded-md border overflow-hidden">
-          {/* vertical scroll */}
           <div className="max-h-[65vh] overflow-y-auto">
-            {/* horizontal scroll */}
             <div style={{ overflowX: "auto" }}>
               <div style={{ minWidth: 1800 }}>
                 <table className="w-full table-auto border-collapse text-sm">
@@ -479,17 +476,58 @@ export default function MaterialLedgerTable() {
             </div>
           </div>
         </div>
-          <Dialog open={openPurchase} onOpenChange={setOpenPurchase}>
-          <DialogContent className="!p-0 overflow-hidden !h-[92vh] max-w-5xl">
-            {/* Scroll fix inside modal */}
-            <div className="flex flex-col h-full min-h-0">
-              <div className="flex-1 min-h-0 overflow-auto p-4">
-                <MaterialForm />
+
+        {/* ================= PURCHASE MODAL (✅ FULL SCREEN LIKE BulkEdit) ================= */}
+        <Dialog open={openPurchase} onOpenChange={setOpenPurchase}>
+          <DialogContent
+            className="
+              !p-0 overflow-hidden
+              !h-[92vh] !w-[96vw] !max-w-[96vw]
+              !flex !flex-col
+              [&>button]:hidden
+            "
+          >
+            {/* ✅ IMPORTANT: flex + min-h-0 chain */}
+            <div className="h-full min-h-0 flex flex-col">
+              {/* ✅ TOP BAR inside modal */}
+              <div className="shrink-0 px-4 md:px-6 py-4 border-b bg-background/60 backdrop-blur flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-base md:text-lg font-semibold">
+                    Material Purchase Entry
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {selectedSupplier?.name ? `Supplier: ${selectedSupplier.name}` : ""}
+                    {selectedSite?.siteName ? ` • Site: ${selectedSite.siteName}` : ""}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setOpenPurchase(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+
+              {/* ✅ ONLY THIS AREA SCROLLS */}
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <div
+                  className="h-full min-h-0 overflow-auto p-3 md:p-4"
+                  style={{
+                    scrollbarGutter: "stable",
+                    WebkitOverflowScrolling: "touch",
+                    overscrollBehavior: "contain",
+                  }}
+                >
+                  <MaterialForm />
+                </div>
               </div>
             </div>
           </DialogContent>
         </Dialog>
-
       </CardContent>
     </Card>
   );
