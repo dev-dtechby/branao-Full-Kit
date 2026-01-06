@@ -1,10 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Download, Plus, Edit, Trash2 } from "lucide-react";
+import {
+  Download,
+  Upload,
+  Plus,
+  Edit,
+  Trash2,
+  ChevronDown,
+  BadgePercent,
+  FileText,
+  Sheet,
+} from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import MaterialForm from "../../../(purchase)/material-purchase-entry/components/MaterialForm";
 
@@ -88,6 +98,12 @@ export default function MaterialLedgerTable() {
   /* ================= PURCHASE MODAL ================= */
   const [openPurchase, setOpenPurchase] = useState(false);
 
+  /* ================= ACTIONS (EXPORT/IMPORT) ================= */
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement | null>(null);
+
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
   /* ================= LOAD SITES + SUPPLIERS ================= */
   useEffect(() => {
     (async () => {
@@ -118,11 +134,26 @@ export default function MaterialLedgerTable() {
     })();
   }, []);
 
+  /* ================= OUTSIDE CLICK (EXPORT DROPDOWN) ================= */
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!exportOpen) return;
+      const target = e.target as Node;
+      if (exportRef.current && !exportRef.current.contains(target)) {
+        setExportOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [exportOpen]);
+
   /* ================= SUPPLIER SUGGESTIONS ================= */
   const supplierSuggestions = useMemo(() => {
     const q = supplierQuery.trim().toLowerCase();
     if (!q) return suppliers.slice(0, 20);
-    return suppliers.filter((x) => x.name.toLowerCase().includes(q)).slice(0, 20);
+    return suppliers
+      .filter((x) => x.name.toLowerCase().includes(q))
+      .slice(0, 20);
   }, [supplierQuery, suppliers]);
 
   function applySupplierByName(name: string) {
@@ -207,18 +238,46 @@ export default function MaterialLedgerTable() {
     return map;
   }, [rows]);
 
+  /* ================= ACTION HANDLERS (placeholder) ================= */
+  const exportExcel = () => {
+    setExportOpen(false);
+    console.log("Export Excel", { rows, selectedSupplierId, selectedSiteId });
+    // TODO: connect to your existing export utils (Excel)
+  };
+
+  const exportPDF = () => {
+    setExportOpen(false);
+    console.log("Export PDF", { rows, selectedSupplierId, selectedSiteId });
+    // TODO: connect to your existing export utils (PDF)
+  };
+
+  const triggerImport = () => {
+    importInputRef.current?.click();
+  };
+
+  const onImportFile = (file?: File) => {
+    if (!file) return;
+    console.log("Import file selected:", file.name);
+    // TODO: implement import logic
+  };
+
+  const addRoyalty = () => {
+    console.log("Add Royalty clicked");
+    // TODO: open royalty modal / implement
+  };
+
   /* ================= UI ================= */
   return (
-    <Card className="p-6 shadow-sm border rounded-xl">
-      <CardHeader>
-        <CardTitle className="text-2xl font-semibold text-default-900">
+    <Card className="p-4 md:p-6 shadow-sm border rounded-xl">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xl md:text-2xl font-semibold text-default-900">
           Material Supplier Ledger
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-5">
         {/* ---------------- FILTER BAR ---------------- */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 md:gap-4 items-center">
           {/* Supplier Search */}
           <div className="w-full">
             <Input
@@ -235,6 +294,7 @@ export default function MaterialLedgerTable() {
                 if (!selectedSupplierId) applySupplierByName(supplierQuery);
               }}
               list="supplier_datalist"
+              className="h-10"
             />
             <datalist id="supplier_datalist">
               {supplierSuggestions.map((s) => (
@@ -262,11 +322,11 @@ export default function MaterialLedgerTable() {
           </select>
 
           {/* Contact */}
-          <Input placeholder="Contact Number" value={contact} disabled />
+          <Input placeholder="Contact Number" value={contact} disabled className="h-10" />
 
           {/* Purchase Button */}
           <Button
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 h-10"
             disabled={!selectedSupplierId}
             onClick={() => setOpenPurchase(true)}
           >
@@ -274,33 +334,97 @@ export default function MaterialLedgerTable() {
           </Button>
         </div>
 
-        {/* ---------------- TOTAL CARDS ---------------- */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 rounded-lg bg-green-100 dark:bg-green-900">
-            <p className="text-sm">Total Amount</p>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-300">
-              ₹ {totals.totalAmt.toFixed(2)}
-            </p>
+        {/* ---------------- TOTALS (SMALL) + EXPORT/IMPORT + ROYALTY ---------------- */}
+        <div className="flex flex-col md:flex-row md:items-stretch gap-3">
+          {/* totals */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1">
+            <div className="p-3 rounded-lg border bg-green-100/80 dark:bg-green-900/40">
+              <p className="text-[11px] md:text-xs text-default-700">Total Amount</p>
+              <p className="text-lg md:text-xl font-bold text-green-700 dark:text-green-300 leading-tight">
+                ₹ {totals.totalAmt.toFixed(2)}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-lg border bg-red-100/80 dark:bg-red-900/40">
+              <p className="text-[11px] md:text-xs text-default-700">Total Pay</p>
+              <p className="text-lg md:text-xl font-bold text-red-700 dark:text-red-300 leading-tight">
+                ₹ {totals.totalPay.toFixed(2)}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-lg border bg-blue-100/80 dark:bg-blue-900/40">
+              <p className="text-[11px] md:text-xs text-default-700">Balance</p>
+              <p className="text-lg md:text-xl font-bold text-blue-700 dark:text-blue-300 leading-tight">
+                ₹ {totals.balance.toFixed(2)}
+              </p>
+            </div>
           </div>
 
-          <div className="p-4 rounded-lg bg-red-100 dark:bg-red-900">
-            <p className="text-sm">Total Pay</p>
-            <p className="text-2xl font-bold text-red-600 dark:text-red-300">
-              ₹ {totals.totalPay.toFixed(2)}
-            </p>
-          </div>
+          {/* actions (right side on desktop) */}
+          <div className="flex flex-wrap md:flex-nowrap gap-2 md:justify-end md:items-center">
+            {/* Export dropdown */}
+            <div ref={exportRef} className="relative">
+              <Button
+                variant="outline"
+                className="h-10 flex items-center gap-2"
+                disabled={!rows.length}
+                onClick={() => setExportOpen((p) => !p)}
+              >
+                <Download className="h-4 w-4" />
+                Export
+                <ChevronDown className="h-4 w-4 opacity-70" />
+              </Button>
 
-          <div className="p-4 rounded-lg bg-blue-100 dark:bg-blue-900">
-            <p className="text-sm">Balance</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-300">
-              ₹ {totals.balance.toFixed(2)}
-            </p>
+              {exportOpen && (
+                <div className="absolute right-0 mt-2 w-44 rounded-md border bg-background shadow-lg overflow-hidden z-50">
+                  <button
+                    type="button"
+                    onClick={exportExcel}
+                    className="w-full px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                  >
+                    <Sheet className="h-4 w-4" />
+                    Export Excel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportPDF}
+                    className="w-full px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Export PDF
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Import */}
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => onImportFile(e.target.files?.[0])}
+            />
+            <Button
+              variant="outline"
+              className="h-10 flex items-center gap-2"
+              onClick={triggerImport}
+            >
+              <Upload className="h-4 w-4" />
+              Import
+            </Button>
+
+            {/* Add Royalty */}
+            <Button className="h-10 flex items-center gap-2" onClick={addRoyalty}>
+              <BadgePercent className="h-4 w-4" />
+              Add Royalty
+            </Button>
           </div>
         </div>
 
-        {/* ---------------- MATERIAL LIST SECTION ---------------- */}
-        <div className="border rounded-lg p-4">
-          <p className="font-semibold mb-2">Material List</p>
+        {/* ---------------- MATERIAL LIST SECTION (✅ MOBILE FIX) ---------------- */}
+        <div className="border rounded-lg p-3 md:p-4">
+          <p className="font-semibold mb-3">Material List</p>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             {["Sand", "Limestone", "Murum", "Other"].map((m) => {
@@ -308,37 +432,33 @@ export default function MaterialLedgerTable() {
               return (
                 <div
                   key={m}
-                  className="flex gap-2 items-center border px-3 py-2 rounded-md"
+                  className="border rounded-md p-3 bg-background/20"
                 >
-                  <span className="font-medium w-20">{m}</span>
-                  <Input
-                    value={v.qty ? String(v.qty) : ""}
-                    placeholder="Qty"
-                    className="w-20 h-7 text-xs"
-                    disabled
-                  />
-                  <Input
-                    value={v.amt ? String(Math.round(v.amt)) : ""}
-                    placeholder="Amt"
-                    className="w-24 h-7 text-xs"
-                    disabled
-                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium">{m}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Summary
+                    </div>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <Input
+                      value={v.qty ? String(v.qty) : ""}
+                      placeholder="Qty"
+                      className="h-9 text-sm"
+                      disabled
+                    />
+                    <Input
+                      value={v.amt ? String(Math.round(v.amt)) : ""}
+                      placeholder="Amt"
+                      className="h-9 text-sm"
+                      disabled
+                    />
+                  </div>
                 </div>
               );
             })}
           </div>
-        </div>
-
-        {/* ---------------- EXPORT BUTTON ---------------- */}
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="outline"
-            className="flex gap-2"
-            disabled={!rows.length}
-            onClick={() => console.log("export ledger")}
-          >
-            <Download className="h-4 w-4" /> Export Ledger
-          </Button>
         </div>
 
         {/* ---------------- LEDGER TABLE ---------------- */}
@@ -435,10 +555,14 @@ export default function MaterialLedgerTable() {
 
                           <td className="p-3">{row.royaltyQty ?? "-"}</td>
                           <td className="p-3">
-                            {row.royaltyRate != null ? `₹ ${n(row.royaltyRate).toFixed(2)}` : "-"}
+                            {row.royaltyRate != null
+                              ? `₹ ${n(row.royaltyRate).toFixed(2)}`
+                              : "-"}
                           </td>
                           <td className="p-3">
-                            {row.royaltyAmt != null ? `₹ ${n(row.royaltyAmt).toFixed(2)}` : "-"}
+                            {row.royaltyAmt != null
+                              ? `₹ ${n(row.royaltyAmt).toFixed(2)}`
+                              : "-"}
                           </td>
 
                           <td className="p-3">
@@ -477,7 +601,7 @@ export default function MaterialLedgerTable() {
           </div>
         </div>
 
-        {/* ================= PURCHASE MODAL (✅ FULL SCREEN LIKE BulkEdit) ================= */}
+        {/* ================= PURCHASE MODAL (FULL SCREEN LIKE BulkEdit) ================= */}
         <Dialog open={openPurchase} onOpenChange={setOpenPurchase}>
           <DialogContent
             className="
@@ -487,9 +611,7 @@ export default function MaterialLedgerTable() {
               [&>button]:hidden
             "
           >
-            {/* ✅ IMPORTANT: flex + min-h-0 chain */}
             <div className="h-full min-h-0 flex flex-col">
-              {/* ✅ TOP BAR inside modal */}
               <div className="shrink-0 px-4 md:px-6 py-4 border-b bg-background/60 backdrop-blur flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-base md:text-lg font-semibold">
@@ -502,17 +624,12 @@ export default function MaterialLedgerTable() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setOpenPurchase(false)}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => setOpenPurchase(false)}>
                     Close
                   </Button>
                 </div>
               </div>
 
-              {/* ✅ ONLY THIS AREA SCROLLS */}
               <div className="flex-1 min-h-0 overflow-hidden">
                 <div
                   className="h-full min-h-0 overflow-auto p-3 md:p-4"
