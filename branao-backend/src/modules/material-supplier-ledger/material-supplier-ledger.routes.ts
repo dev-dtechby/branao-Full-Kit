@@ -2,7 +2,14 @@ import { Router } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import { getLedger, createBulk } from "./material-supplier-ledger.controller";
+import {
+  getLedger,
+  createBulk,
+  updateOne,
+  bulkUpdate,
+  deleteOne,
+  bulkDelete,
+} from "./material-supplier-ledger.controller";
 
 const router = Router();
 
@@ -15,8 +22,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+/* GET ledger */
 router.get("/", getLedger);
 
+/* BULK CREATE (multipart) */
 router.post(
   "/bulk",
   upload.fields([
@@ -25,5 +34,17 @@ router.post(
   ]),
   createBulk
 );
+
+/* ✅ BULK UPDATE (JSON) - keep ABOVE "/:id" */
+router.put("/bulk-update", bulkUpdate);
+
+/* ✅ BULK DELETE (JSON) - keep ABOVE "/:id" */
+router.post("/bulk-delete", bulkDelete);
+
+/* SINGLE UPDATE (JSON) */
+router.put("/:id", updateOne);
+
+/* SINGLE DELETE */
+router.delete("/:id", deleteOne);
 
 export default router;

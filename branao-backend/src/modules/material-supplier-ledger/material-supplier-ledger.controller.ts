@@ -38,9 +38,7 @@ export const createBulk = async (req: Request, res: Response) => {
     const receiptFiles = files.receiptFiles || [];
 
     if (unloadingFiles.length !== rows.length || receiptFiles.length !== rows.length) {
-      return res.status(400).json({
-        message: "Files count must match rows count",
-      });
+      return res.status(400).json({ message: "Files count must match rows count" });
     }
 
     const created = await service.createBulk({
@@ -59,5 +57,66 @@ export const createBulk = async (req: Request, res: Response) => {
   } catch (e: any) {
     console.error("createBulk error:", e);
     return res.status(400).json({ message: e?.message || "Save failed" });
+  }
+};
+
+/* ✅ SINGLE UPDATE */
+export const updateOne = async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || "");
+    if (!id) return res.status(400).json({ message: "id required" });
+
+    const updated = await service.updateOne(id, req.body || {});
+    return res.json({ message: "Updated", data: updated });
+  } catch (e: any) {
+    console.error("updateOne error:", e);
+    // if record not found, service throws
+    return res.status(400).json({ message: e?.message || "Update failed" });
+  }
+};
+
+/* ✅ BULK UPDATE: expects { rows: [{ id, ...fields }] } */
+export const bulkUpdate = async (req: Request, res: Response) => {
+  try {
+    const rows = req.body?.rows;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ message: "rows array required" });
+    }
+
+    const result = await service.bulkUpdate(rows);
+    return res.json({ message: `Updated ${result.count} rows`, data: result });
+  } catch (e: any) {
+    console.error("bulkUpdate error:", e);
+    return res.status(400).json({ message: e?.message || "Bulk update failed" });
+  }
+};
+
+/* ✅ SINGLE DELETE */
+export const deleteOne = async (req: Request, res: Response) => {
+  try {
+    const id = String(req.params.id || "");
+    if (!id) return res.status(400).json({ message: "id required" });
+
+    await service.deleteOne(id);
+    return res.json({ message: "Deleted" });
+  } catch (e: any) {
+    console.error("deleteOne error:", e);
+    return res.status(400).json({ message: e?.message || "Delete failed" });
+  }
+};
+
+/* ✅ BULK DELETE: expects { ids: string[] } */
+export const bulkDelete = async (req: Request, res: Response) => {
+  try {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "ids array required" });
+    }
+
+    const result = await service.bulkDelete(ids.map(String));
+    return res.json({ message: `Deleted ${result.count} rows`, data: result });
+  } catch (e: any) {
+    console.error("bulkDelete error:", e);
+    return res.status(400).json({ message: e?.message || "Bulk delete failed" });
   }
 };
