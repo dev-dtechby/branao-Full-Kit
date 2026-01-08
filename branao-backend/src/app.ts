@@ -19,6 +19,7 @@ import materialMasterRoutes from "./modules/material-master/material-master.rout
 import materialSupplierRoutes from "./modules/material-supplier/material-supplier.routes";
 import siteTransactionRoutes from "./modules/site-transaction/site-transaction.routes";
 import materialSupplierLedgerRoutes from "./modules/material-supplier-ledger/material-supplier-ledger.routes";
+import paymentRoutes from "./modules/payment/payment.routes";
 
 const app = express();
 
@@ -98,6 +99,7 @@ app.use("/api/material-master", materialMasterRoutes);
 app.use("/api/material-suppliers", materialSupplierRoutes);
 app.use("/api/site-transactions", siteTransactionRoutes);
 app.use("/api/material-supplier-ledger", materialSupplierLedgerRoutes);
+app.use("/api/payments", paymentRoutes);
 
 
 // ====================

@@ -321,6 +321,8 @@ model Ledger {
   // ✅ Material Supplier Ledger entries (Party-wise)
   materialSupplierLedgers MaterialSupplierLedger[] @relation("LedgerMaterialSupplierLedgers")
 
+  paymentEntries PaymentEntry[]
+
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
@@ -368,10 +370,10 @@ model MaterialSupplierLedger {
 
   entryDate    DateTime
   receiptNo    String?
-  parchiPhoto  String? @db.Text // Cloudinary secureUrl
+  parchiPhoto  String?  @db.Text // Cloudinary secureUrl
   otp          String? // if needed
   vehicleNo    String?
-  vehiclePhoto String? @db.Text // Cloudinary secureUrl
+  vehiclePhoto String?  @db.Text // Cloudinary secureUrl
 
   material String
   size     String?
@@ -453,7 +455,7 @@ model SiteTransaction {
   source   SiteTxnSource
   sourceId String // original record id (e.g. SiteExpense.id)
   nature   SiteTxnNature
-  amount   Decimal @db.Decimal(18, 2)
+  amount   Decimal       @db.Decimal(18, 2)
 
   title   String?
   remarks String?
@@ -467,13 +469,38 @@ model SiteTransaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ✅ NEW (IMPORTANT): for upsert (source+sourceId is unique)
+  @@unique([source, sourceId])
   @@index([siteId])
   @@index([txnDate])
   @@index([siteId, txnDate])
   @@index([source, sourceId])
-
-  // ✅ NEW (IMPORTANT): for upsert (source+sourceId is unique)
-  @@unique([source, sourceId])
-
   @@index([isDeleted])
+}
+
+enum PaymentMode {
+  CASH
+  BANK
+  UPI
+  CHEQUE
+  NEFT_RTGS
+  OTHER
+}
+
+model PaymentEntry {
+  id String @id @default(cuid())
+
+  ledgerId String
+  ledger   Ledger @relation(fields: [ledgerId], references: [id])
+
+  entryDate   DateTime
+  paymentMode String
+  particulars String?
+  amount      Decimal  @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ledgerId])
+  @@index([entryDate])
 }

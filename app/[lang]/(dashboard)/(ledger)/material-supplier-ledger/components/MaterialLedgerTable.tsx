@@ -22,6 +22,11 @@ import MaterialForm from "../../../(purchase)/material-purchase-entry/components
 
 import EditMaterialLedgerTable from "./EditMaterialLedgerTable";
 import DeleteConfirmDialog from "@/components/common/DeleteConfirmDialog";
+import {
+  exportSupplierLedgerToExcel,
+  exportSupplierLedgerToPDF,
+} from "./ExportSupplilerLedger";
+
 
 /* ================= API BASE ================= */
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
@@ -232,6 +237,8 @@ export default function MaterialLedgerTable() {
     [sites, selectedSiteId]
   );
 
+
+  
   /* ================= LOAD LEDGER ================= */
   async function loadLedger() {
     if (!selectedSupplierId) {
@@ -366,15 +373,52 @@ export default function MaterialLedgerTable() {
   }, [rows, materials]);
 
   /* ================= ACTION HANDLERS (placeholder) ================= */
+  /* ================= EXPORT DATA ================= */
+  const exportRows = (selectedIds.size ? selectedRows : rows).map((r) => {
+    const total = rowTotal(r);
+    const payment = rowPayment(r);
+    const balance = rowBalance(r);
+
+    const siteName =
+      r.site?.siteName || (r.siteId ? siteNameById.get(r.siteId) : "") || "-";
+
+    return {
+      "DATE": formatDate(r.entryDate),
+      "Site": siteName,
+      "Receipt No": r.receiptNo || "",
+      "Vehicle No": r.vehicleNo || "",
+      "Material": r.material || "",
+      "Size": r.size || "",
+      "Qty": r.qty ?? "",
+      "Rate": n(r.rate).toFixed(2),
+      "Royalty Qty": r.royaltyQty ?? "",
+      "Royalty Rate": r.royaltyRate != null ? n(r.royaltyRate).toFixed(2) : "",
+      "Royalty Amt": r.royaltyAmt != null ? n(r.royaltyAmt).toFixed(2) : "",
+      "GST": r.gstPercent != null ? `${n(r.gstPercent)}%` : "",
+      "Tax Amt": r.taxAmt != null ? n(r.taxAmt).toFixed(2) : "",
+      "Total": total.toFixed(2),
+      "Payment": payment.toFixed(2),
+      "Balance": balance.toFixed(2),
+    };
+  });
+
+
   const exportExcel = () => {
     setExportOpen(false);
-    console.log("Export Excel", { rows, selectedSupplierId, selectedSiteId });
+    exportSupplierLedgerToExcel(exportRows, "Supplier_Ledger", {
+      supplierName: selectedSupplier?.name || supplierQuery || "",
+      siteName: selectedSite?.siteName || "All Sites",
+    });
   };
 
   const exportPDF = () => {
     setExportOpen(false);
-    console.log("Export PDF", { rows, selectedSupplierId, selectedSiteId });
+    exportSupplierLedgerToPDF(exportRows, "Supplier_Ledger", {
+      supplierName: selectedSupplier?.name || supplierQuery || "",
+      siteName: selectedSite?.siteName || "All Sites",
+    });
   };
+
 
   const triggerImport = () => {
     importInputRef.current?.click();

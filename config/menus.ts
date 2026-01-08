@@ -665,6 +665,24 @@ export const menusConfig = {
         // },
       ],
     },
+    
+    {
+      title: "Payment",
+      icon: Grid,
+      child: [
+        {
+          title: "Payment Entry",
+          href: "/paymentEntry",
+          icon: BarLeft,
+        },
+        {
+          title: "Payment List",
+          href: "/all-payment-list",
+          icon: BarLeft,
+        },
+      ],
+    },
+
     /* ======================================================
       SETTINGS / ADMIN SECTION (NEW)
     ====================================================== */
@@ -1713,6 +1731,24 @@ export const menusConfig = {
           // },
         ],
       },
+
+          {
+            title: "Payment",
+            icon: Grid,
+            child: [
+              {
+                title: "Payment Entry",
+                href: "/paymentEntry",
+                icon: BarLeft,
+              },
+              {
+                title: "Payment List",
+                href: "/all-payment-list",
+                icon: BarLeft,
+              },
+            ],
+          },
+
    /* ======================================================
       SETTINGS / ADMIN SECTION (NEW)
     ====================================================== */
@@ -2784,6 +2820,22 @@ export const menusConfig = {
           // },
         ],
       },
+          {
+            title: "Payment",
+            icon: Grid,
+            child: [
+              {
+                title: "Payment Entry",
+                href: "/paymentEntry",
+                icon: BarLeft,
+              },
+              {
+                title: "Payment List",
+                href: "/all-payment-list",
+                icon: BarLeft,
+              },
+            ],
+          },      
          /* ======================================================
       SETTINGS / ADMIN SECTION (NEW)
     ====================================================== */

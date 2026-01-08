@@ -10,12 +10,14 @@ import type {
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
+type ToastVariant = "default" | "destructive" // ✅ ADD THIS
 
 type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  variant?: ToastVariant
 }
 
 const actionTypes = {

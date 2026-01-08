@@ -7,11 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
 /* ========= EXPORT UTILS ========= */
-import {
-  exportToCSV,
-  exportToExcel,
-  exportToPDF,
-} from "@/lib/exportUtils";
+import { exportSummaryToExcel, exportSummaryToPDF } from "./ExportSummary";
 
 /* ================= TYPES ================= */
 interface Site {
@@ -85,22 +81,24 @@ export default function SiteSummaryCards() {
   const totalAmount = filtered.reduce((sum, v) => sum + v.amount, 0);
 
   /* ================= EXPORT DATA ================= */
-  const exportData = [
-    ...filtered.map((row) => ({
-      Site: selectedSite || "All Sites",
-      "Expense Summary": row.summary,
-      Amount: row.amount,
-    })),
-    ...(filtered.length
-      ? [
-          {
-            Site: selectedSite || "All Sites",
-            "Expense Summary": "TOTAL",
-            Amount: totalAmount,
-          },
-        ]
-      : []),
-  ];
+const exportRows = summaryRows; // ✅ selectedSite applied, search ignored
+
+const exportData = [
+  ...exportRows.map((row) => ({
+    Site: selectedSite || "All Sites",
+    "Expense Summary": row.summary,
+    Amount: row.amount,
+  })),
+  ...(exportRows.length
+    ? [
+        {
+          Site: selectedSite || "All Sites",
+          "Expense Summary": "TOTAL",
+          Amount: exportRows.reduce((sum, v) => sum + v.amount, 0),
+        },
+      ]
+    : []),
+];
 
   return (
     <Card className="p-6 border rounded-xl shadow-sm">
@@ -136,17 +134,10 @@ export default function SiteSummaryCards() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  exportToCSV(exportData, "summary-wise-expenses")
-                }
-              >
-                <Download className="h-4 w-4 mr-1" />
-                CSV
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() =>
-                  exportToExcel(exportData, "summary-wise-expenses")
+                  exportSummaryToExcel(
+                    exportData as any,
+                    `summary-wise-expenses_${selectedSite || "all"}`
+                  )
                 }
               >
                 Excel
@@ -155,11 +146,14 @@ export default function SiteSummaryCards() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  exportToPDF(exportData, "summary-wise-expenses")
+                  exportSummaryToPDF(exportData as any, "summary-wise-expenses_all", {
+                    title: `Summary Wise Expenses - ${selectedSite || "All Sites"}`,
+                  })
                 }
               >
                 PDF
               </Button>
+
             </div>
           </div>
         </div>
