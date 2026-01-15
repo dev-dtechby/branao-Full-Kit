@@ -64,21 +64,29 @@ export default function SiteForm() {
   /* ================= LOAD DEPARTMENTS ================= */
   const loadDepartments = async () => {
     try {
-      const res = await fetch(DEPT_API);
-      if (!res.ok) throw new Error();
+      const res = await fetch(DEPT_API, {
+        method: "GET",
+        // ✅ PROD FIX: ensure cookies/session are sent cross-origin (if auth/session required)
+        credentials: "include",
+      });
 
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.message || "Failed to load departments");
+      }
+
       setDepartments(json?.data ?? []);
-    } catch {
+    } catch (e: any) {
       toast({
         title: "❌ Error",
-        description: "Failed to load departments",
+        description: e?.message || "Failed to load departments",
       });
     }
   };
 
   useEffect(() => {
     loadDepartments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ================= HELPERS ================= */
@@ -86,35 +94,33 @@ export default function SiteForm() {
     setEstimate((prev) => ({ ...prev, [key]: value }));
   };
 
-const buildFormData = () => {
-  const fd = new FormData();
+  const buildFormData = () => {
+    const fd = new FormData();
 
-  fd.append("siteName", siteName);
-  fd.append("tenderNo", tenderNo);
-  fd.append("sdAmount", sdAmount);
+    fd.append("siteName", siteName);
+    fd.append("tenderNo", tenderNo);
+    fd.append("sdAmount", sdAmount);
 
-  // ✅ IMPORTANT FIX: Always append departmentId (trimmed)
-  // (validation already ensures it's selected)
-  fd.append("departmentId", (departmentId || "").trim());
+    // ✅ Always append departmentId (trimmed)
+    fd.append("departmentId", (departmentId || "").trim());
 
-  fd.append("cement", estimate["Cement"] || "");
-  fd.append("metal", estimate["Metal"] || "");
-  fd.append("sand", estimate["Sand"] || "");
-  fd.append("labour", estimate["Labour"] || "");
-  fd.append("royalty", estimate["Royalty"] || "");
-  fd.append("overhead", estimate["Over Head"] || "");
-  fd.append("lead", estimate["Lead"] || "");
-  fd.append("dressing", estimate["Dressing"] || "");
-  fd.append("waterCompaction", estimate["Water & Compaction"] || "");
-  fd.append("loading", estimate["Loading"] || "");
+    fd.append("cement", estimate["Cement"] || "");
+    fd.append("metal", estimate["Metal"] || "");
+    fd.append("sand", estimate["Sand"] || "");
+    fd.append("labour", estimate["Labour"] || "");
+    fd.append("royalty", estimate["Royalty"] || "");
+    fd.append("overhead", estimate["Over Head"] || "");
+    fd.append("lead", estimate["Lead"] || "");
+    fd.append("dressing", estimate["Dressing"] || "");
+    fd.append("waterCompaction", estimate["Water & Compaction"] || "");
+    fd.append("loading", estimate["Loading"] || "");
 
-  if (sdFile) fd.append("sdFile", sdFile);
-  if (workOrderFile) fd.append("workOrderFile", workOrderFile);
-  tenderDocs.forEach((f) => fd.append("tenderDocs", f));
+    if (sdFile) fd.append("sdFile", sdFile);
+    if (workOrderFile) fd.append("workOrderFile", workOrderFile);
+    tenderDocs.forEach((f) => fd.append("tenderDocs", f));
 
-  return fd;
-};
-
+    return fd;
+  };
 
   /* ================= RESET ================= */
   const resetForm = () => {
@@ -133,40 +139,57 @@ const buildFormData = () => {
   };
 
   /* ================= SAVE ================= */
-const handleSave = async () => {
-  if (!siteName.trim()) {
-    toast({ title: "❌ Site Name is required" });
-    return;
-  }
+  const handleSave = async () => {
+    if (!siteName.trim()) {
+      toast({ title: "❌ Site Name is required" });
+      return;
+    }
 
-  // ✅ ADD THIS
-  if (!departmentId) {
-    toast({
-      title: "❌ Department is required",
-      description: "Please select department before saving site.",
-    });
-    return;
-  }
+    if (!departmentId) {
+      toast({
+        title: "❌ Department is required",
+        description: "Please select department before saving site.",
+      });
+      return;
+    }
 
-  try {
-    setLoading(true);
-    const res = await fetch(SITE_API, {
-      method: "POST",
-      body: buildFormData(),
-    });
+    try {
+      setLoading(true);
 
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.message || "Failed");
+      const res = await fetch(SITE_API, {
+        method: "POST",
+        body: buildFormData(),
+        // ✅ PROD FIX: send cookies/session cross-origin (common reason: works local, fails deployed)
+        credentials: "include",
+      });
 
-    toast({ title: "✅ Site Created Successfully" });
-    resetForm();
-  } catch (e: any) {
-    toast({ title: "❌ Error", description: e.message });
-  } finally {
-    setLoading(false);
-  }
-};
+      // ✅ Robust error parsing (so prod me exact issue dikh jaaye)
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch {
+        json = { message: text };
+      }
 
+      if (!res.ok) {
+        const msg =
+          json?.message ||
+          `Site create failed (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+
+      toast({ title: "✅ Site Created Successfully" });
+      resetForm();
+    } catch (e: any) {
+      toast({
+        title: "❌ Error",
+        description: e?.message || "Site create failed",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /* ================= UI ================= */
   return (
@@ -178,12 +201,18 @@ const handleSave = async () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
             <Label>Site Name</Label>
-            <Input value={siteName} onChange={(e) => setSiteName(e.target.value)} />
+            <Input
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+            />
           </div>
 
           <div>
             <Label>Tender No</Label>
-            <Input value={tenderNo} onChange={(e) => setTenderNo(e.target.value)} />
+            <Input
+              value={tenderNo}
+              onChange={(e) => setTenderNo(e.target.value)}
+            />
           </div>
 
           <div>
@@ -218,23 +247,43 @@ const handleSave = async () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
             <Label>EMD Amount</Label>
-            <Input value={sdAmount} onChange={(e) => setSdAmount(e.target.value)} />
+            <Input
+              value={sdAmount}
+              onChange={(e) => setSdAmount(e.target.value)}
+            />
           </div>
 
           <div>
             <Label>Upload SD</Label>
-            <Input ref={sdFileRef} type="file" onChange={(e) => setSdFile(e.target.files?.[0] || null)} />
+            <Input
+              ref={sdFileRef}
+              type="file"
+              onChange={(e) => setSdFile(e.target.files?.[0] || null)}
+            />
           </div>
 
           <div>
             <Label>Upload Work Order</Label>
-            <Input ref={workOrderFileRef} type="file" onChange={(e) => setWorkOrderFile(e.target.files?.[0] || null)} />
+            <Input
+              ref={workOrderFileRef}
+              type="file"
+              onChange={(e) =>
+                setWorkOrderFile(e.target.files?.[0] || null)
+              }
+            />
           </div>
         </div>
 
         <div>
           <Label>All Tender Documents</Label>
-          <Input ref={tenderDocsRef} type="file" multiple onChange={(e) => setTenderDocs(Array.from(e.target.files || []))} />
+          <Input
+            ref={tenderDocsRef}
+            type="file"
+            multiple
+            onChange={(e) =>
+              setTenderDocs(Array.from(e.target.files || []))
+            }
+          />
         </div>
 
         {/* ESTIMATE */}
@@ -257,13 +306,14 @@ const handleSave = async () => {
               <Label className="text-sm font-medium">{item}</Label>
               <Input
                 value={estimate[item] || ""}
-                onChange={(e) => handleEstimateChange(item, e.target.value)}
+                onChange={(e) =>
+                  handleEstimateChange(item, e.target.value)
+                }
                 placeholder={`Enter ${item}`}
               />
             </div>
           ))}
         </div>
-
 
         {/* ACTION */}
         <div className="flex justify-center gap-4">
