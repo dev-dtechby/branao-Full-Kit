@@ -5,16 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  CalendarIcon,
-  Upload,
-  Camera,
-  Plus,
-  X,
-  CheckCircle2,
-  RefreshCcw,
-  Save,
-} from "lucide-react";
+import { CalendarIcon, Plus, X, RefreshCcw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -42,23 +33,19 @@ type Material = { id: string; name: string };
 type EntryRow = {
   id: string;
 
+  // ✅ NEW: row-wise date
+  entryDate: Date | undefined;
+
   vehicleNo: string;
-  unloadingFile?: File | null;
 
   materialId: string;
   size: string;
   qty: string;
 
   receiptNo: string;
-  receiptFile?: File | null;
-
-  otp: string;
-  receiptOtpMatch: boolean;
-  scanning: boolean;
 };
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const genOtp = () => Math.floor(1000 + Math.random() * 9000).toString();
 
 const isPositiveNumber = (v: string) => {
   const x = Number(String(v || "").trim());
@@ -66,7 +53,9 @@ const isPositiveNumber = (v: string) => {
 };
 
 export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
-  const [date, setDate] = useState<Date | undefined>(new Date());
+  /* ================= (TOP) SELECTED ================= */
+  const [supplierId, setSupplierId] = useState("");
+  const [siteId, setSiteId] = useState("");
 
   /* ================= DROPDOWN DATA ================= */
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -77,24 +66,16 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
   const [loadingSites, setLoadingSites] = useState(false);
   const [loadingMat, setLoadingMat] = useState(false);
 
-  /* ================= SELECTED ================= */
-  const [supplierId, setSupplierId] = useState("");
-  const [siteId, setSiteId] = useState("");
-
   /* ================= ROWS ================= */
   const [rows, setRows] = useState<EntryRow[]>([
     {
       id: uid(),
+      entryDate: new Date(), // ✅ default today
       vehicleNo: "",
-      unloadingFile: null,
       materialId: "",
       size: "",
       qty: "",
       receiptNo: "",
-      receiptFile: null,
-      otp: "",
-      receiptOtpMatch: false,
-      scanning: false,
     },
   ]);
 
@@ -174,16 +155,12 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
       ...prev,
       {
         id: uid(),
+        entryDate: new Date(), // ✅ default today
         vehicleNo: "",
-        unloadingFile: null,
         materialId: "",
         size: "",
         qty: "",
         receiptNo: "",
-        receiptFile: null,
-        otp: "",
-        receiptOtpMatch: false,
-        scanning: false,
       },
     ]);
   };
@@ -195,79 +172,42 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
   };
 
   const resetAll = () => {
-    setDate(new Date());
     setSupplierId("");
     setSiteId("");
     setRows([
       {
         id: uid(),
+        entryDate: new Date(),
         vehicleNo: "",
-        unloadingFile: null,
         materialId: "",
         size: "",
         qty: "",
         receiptNo: "",
-        receiptFile: null,
-        otp: "",
-        receiptOtpMatch: false,
-        scanning: false,
       },
     ]);
-  };
-
-  /* ================= UPLOAD / OTP (PER ROW) ================= */
-  const onUnloadingPhoto = (id: string, file?: File) => {
-    if (!file) return;
-    const otp = genOtp();
-    updateRow(id, {
-      unloadingFile: file,
-      otp,
-      receiptOtpMatch: false,
-      receiptFile: null,
-      scanning: false,
-    });
-  };
-
-  const scanReceiptForOtp = (id: string, file?: File) => {
-    if (!file) return;
-    updateRow(id, { receiptFile: file, scanning: true });
-
-    setTimeout(() => {
-      setRows((prev) =>
-        prev.map((r) => {
-          if (r.id !== id) return r;
-          if (!r.otp) return { ...r, scanning: false, receiptOtpMatch: false };
-          const ok = Math.random() > 0.4; // dummy OCR
-          return { ...r, scanning: false, receiptOtpMatch: ok };
-        })
-      );
-    }, 800);
   };
 
   /* ================= VALIDATION ================= */
   const rowValid = (r: EntryRow) => {
     return (
+      !!r.entryDate &&
       r.vehicleNo.trim() &&
-      !!r.unloadingFile &&
       r.materialId &&
       isPositiveNumber(r.qty) &&
-      r.receiptNo.trim() &&
-      !!r.receiptFile &&
-      !!r.otp &&
-      r.receiptOtpMatch
+      r.receiptNo.trim()
     );
   };
 
   const canSave = useMemo(() => {
-    if (!date || !supplierId || !siteId) return false;
+    if (!supplierId || !siteId) return false;
     if (!rows.length) return false;
     return rows.every(rowValid);
-  }, [date, supplierId, siteId, rows]);
+  }, [supplierId, siteId, rows]);
 
-  // ✅ Save to backend (multipart + files) — UI/flow unchanged
+  // ✅ Save to backend (NO FILES) — only rows JSON
   const saveAll = async () => {
-    if (!date || !supplierId || !siteId) {
-      alert("Please select Date, Supplier and Site.");
+    if (!supplierId || !siteId) {
+      alert("Please select Supplier and Site.");
       return;
     }
     if (!rows.length) {
@@ -275,39 +215,34 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
       return;
     }
     if (!rows.every(rowValid)) {
-      alert("Please complete all rows (OTP verify required).");
+      alert("Please complete all rows (Date required).");
       return;
     }
 
     try {
       const fd = new FormData();
-      fd.append("entryDate", date.toISOString());
-      fd.append("ledgerId", supplierId); // ✅ supplier ledger id
+      // ✅ backend uses entryDate from form-data for default; but we are sending per row date too
+      fd.append("entryDate", new Date().toISOString());
+      fd.append("ledgerId", supplierId);
       fd.append("siteId", siteId);
 
-      // rows payload (DB expects `material` as STRING)
       const payloadRows = rows.map((r) => ({
         rowKey: r.id,
+        // ✅ NEW: row-wise date (backend should read this; if not, it will fallback to form entryDate)
+        entryDate: r.entryDate ? r.entryDate.toISOString() : undefined,
+
         vehicleNo: r.vehicleNo.trim(),
         receiptNo: r.receiptNo.trim(),
-        otp: r.otp,
-        material: materialNameById.get(r.materialId) || r.materialId, // ✅ never empty
+
+        // OTP removed
+        otp: null,
+
+        material: materialNameById.get(r.materialId) || r.materialId,
         size: r.size?.trim() || null,
-        qty: r.qty, // ✅ keep as string; backend will Decimal parse safely
-        // rate UI me nahi hai; backend default rate=0
+        qty: r.qty,
       }));
 
       fd.append("rows", JSON.stringify(payloadRows));
-
-      // files arrays (order must match rows order)
-      rows.forEach((r) => {
-        // rowValid ensures both exist, still keep safe:
-        if (!r.unloadingFile || !r.receiptFile) {
-          throw new Error("Missing files in one of the rows.");
-        }
-        fd.append("unloadingFiles", r.unloadingFile);
-        fd.append("receiptFiles", r.receiptFile);
-      });
 
       const res = await fetch(LEDGER_BULK_API, {
         method: "POST",
@@ -345,7 +280,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                 Material Purchase Entry
               </CardTitle>
               <div className="text-xs text-muted-foreground mt-1">
-                Top में Date / Supplier / Site चुनो, नीचे table में multiple entries add करो.
+                Top में Supplier / Site चुनो, नीचे table में multiple dates + entries add करो.
               </div>
             </div>
 
@@ -368,27 +303,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
         <CardContent className="p-0">
           {/* TOP CONTROLS */}
           <div className="p-4 md:p-6 border-b">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <Label>Date</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className={cn(
-                        "h-9 w-full flex items-center justify-between px-3 rounded-md border bg-background text-sm"
-                      )}
-                    >
-                      {date ? date.toLocaleDateString() : "Select Date"}
-                      <CalendarIcon className="h-4 w-4 opacity-60" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="p-0" align="start">
-                    <Calendar mode="single" selected={date} onSelect={setDate} />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label>Material Supplier</Label>
                 <select
@@ -445,14 +360,13 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                       <thead className="sticky top-0 z-20 bg-muted/80 backdrop-blur border-b">
                         <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
                           <th className="px-2 py-2 w-10 text-center"> </th>
+                          {/* ✅ NEW column */}
+                          <th className="px-2 py-2 text-left">Date</th>
                           <th className="px-2 py-2 text-left">Vehicle</th>
-                          <th className="px-2 py-2 text-left">Unloading</th>
                           <th className="px-2 py-2 text-left">Material</th>
                           <th className="px-2 py-2 text-left">Size</th>
                           <th className="px-2 py-2 text-left">Qty</th>
                           <th className="px-2 py-2 text-left">Receipt No</th>
-                          <th className="px-2 py-2 text-left">Receipt</th>
-                          <th className="px-2 py-2 text-left">OTP</th>
                           <th className="px-2 py-2 text-left w-36">Status</th>
                         </tr>
                       </thead>
@@ -482,6 +396,35 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 </div>
                               </td>
 
+                              {/* ✅ ROW DATE PICKER */}
+                              <td className="px-2 py-2 align-top">
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className={cn(
+                                        "h-8 w-40 flex items-center justify-between px-2 rounded-md border bg-background text-sm",
+                                        !r.entryDate && "text-muted-foreground"
+                                      )}
+                                    >
+                                      {r.entryDate
+                                        ? r.entryDate.toLocaleDateString()
+                                        : "Select Date"}
+                                      <CalendarIcon className="h-4 w-4 opacity-60" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="p-0" align="start">
+                                    <Calendar
+                                      mode="single"
+                                      selected={r.entryDate}
+                                      onSelect={(d) =>
+                                        updateRow(r.id, { entryDate: d })
+                                      }
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+                              </td>
+
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="CG 04 AB 1234"
@@ -491,38 +434,6 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                   }
                                   className="h-8 w-52 text-sm"
                                 />
-                              </td>
-
-                              <td className="px-2 py-2 align-top">
-                                <input
-                                  id={`unload-${r.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) =>
-                                    onUnloadingPhoto(r.id, e.target.files?.[0])
-                                  }
-                                />
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  className="h-8 w-48 gap-2 justify-start"
-                                  onClick={() =>
-                                    document.getElementById(`unload-${r.id}`)?.click()
-                                  }
-                                >
-                                  <Camera className="h-4 w-4" />
-                                  {r.unloadingFile ? "Uploaded" : "Upload"}
-                                </Button>
-                                <div className="text-[10px] mt-1">
-                                  {r.otp ? (
-                                    <span className="text-green-500">
-                                      OTP: <b>{r.otp}</b>
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">Upload → OTP</span>
-                                  )}
-                                </div>
                               </td>
 
                               <td className="px-2 py-2 align-top">
@@ -559,7 +470,9 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 <Input
                                   placeholder="Qty"
                                   value={r.qty}
-                                  onChange={(e) => updateRow(r.id, { qty: e.target.value })}
+                                  onChange={(e) =>
+                                    updateRow(r.id, { qty: e.target.value })
+                                  }
                                   className="h-8 w-24 text-sm"
                                   inputMode="decimal"
                                 />
@@ -577,63 +490,13 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                               </td>
 
                               <td className="px-2 py-2 align-top">
-                                <input
-                                  id={`receipt-${r.id}`}
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) =>
-                                    scanReceiptForOtp(r.id, e.target.files?.[0])
-                                  }
-                                />
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  className="h-8 w-44 gap-2 justify-start"
-                                  disabled={!r.otp}
-                                  onClick={() =>
-                                    document.getElementById(`receipt-${r.id}`)?.click()
-                                  }
-                                >
-                                  <Upload className="h-4 w-4" />
-                                  {r.scanning
-                                    ? "Scanning..."
-                                    : r.receiptFile
-                                    ? "Uploaded"
-                                    : "Upload"}
-                                </Button>
-                                <div className="text-[10px] mt-1">
-                                  {r.scanning ? (
-                                    <span className="text-muted-foreground">Scanning…</span>
-                                  ) : r.receiptFile ? (
-                                    r.receiptOtpMatch ? (
-                                      <span className="text-green-500">OTP Verified ✔</span>
-                                    ) : (
-                                      <span className="text-red-500">OTP Not Found ❌</span>
-                                    )
-                                  ) : (
-                                    <span className="text-muted-foreground">OTP first</span>
-                                  )}
-                                </div>
-                              </td>
-
-                              <td className="px-2 py-2 align-top">
-                                <Input
-                                  disabled
-                                  value={r.otp}
-                                  className="h-8 w-20 text-sm"
-                                />
-                              </td>
-
-                              <td className="px-2 py-2 align-top">
                                 {ok ? (
-                                  <div className="inline-flex items-center gap-2 text-green-500 text-xs">
-                                    <CheckCircle2 className="h-4 w-4" />
+                                  <div className="text-green-500 text-xs font-medium">
                                     Ready
                                   </div>
                                 ) : (
                                   <div className="text-[11px] text-muted-foreground">
-                                    Fill + verify OTP
+                                    Fill required fields
                                   </div>
                                 )}
                               </td>
@@ -644,7 +507,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                         {rows.length === 0 && (
                           <tr>
                             <td
-                              colSpan={10}
+                              colSpan={8}
                               className="p-6 text-center text-muted-foreground"
                             >
                               No rows
@@ -658,8 +521,8 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
               </div>
             </div>
 
-            <div className="mt-3 text-xs text-yellow-600 italic">
-              Receipt must contain the same OTP generated from unloading photo.
+            <div className="mt-3 text-xs text-muted-foreground italic">
+              Note: Each row has its own date. Multiple dates can be saved in one go.
             </div>
           </div>
 

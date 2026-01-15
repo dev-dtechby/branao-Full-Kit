@@ -19,30 +19,43 @@ export const getLedger = async (req: Request, res: Response) => {
 
 export const createBulk = async (req: Request, res: Response) => {
   try {
+    // ✅ entryDate optional now (fallback only)
     const entryDate = String(req.body?.entryDate || "");
     const ledgerId = String(req.body?.ledgerId || "");
     const siteIdRaw = String(req.body?.siteId || "");
     const rowsStr = String(req.body?.rows || "[]");
 
-    if (!entryDate || !ledgerId) {
-      return res.status(400).json({ message: "entryDate and ledgerId are required" });
+    if (!ledgerId) {
+      return res.status(400).json({ message: "ledgerId is required" });
     }
 
-    const rows = JSON.parse(rowsStr);
+    let rows: any[] = [];
+    try {
+      rows = JSON.parse(rowsStr);
+    } catch {
+      return res.status(400).json({ message: "Invalid rows JSON" });
+    }
+
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ message: "rows required" });
     }
 
+    // ✅ files optional
     const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
     const unloadingFiles = files.unloadingFiles || [];
     const receiptFiles = files.receiptFiles || [];
 
-    if (unloadingFiles.length !== rows.length || receiptFiles.length !== rows.length) {
-      return res.status(400).json({ message: "Files count must match rows count" });
+    const anyFilesUploaded = unloadingFiles.length > 0 || receiptFiles.length > 0;
+
+    // ✅ enforce only if any files provided
+    if (anyFilesUploaded) {
+      if (unloadingFiles.length !== rows.length || receiptFiles.length !== rows.length) {
+        return res.status(400).json({ message: "Files count must match rows count" });
+      }
     }
 
     const created = await service.createBulk({
-      entryDate,
+      entryDate: entryDate || null, // ✅ fallback date
       ledgerId,
       siteId: siteIdRaw ? siteIdRaw : null,
       rows,
@@ -70,7 +83,6 @@ export const updateOne = async (req: Request, res: Response) => {
     return res.json({ message: "Updated", data: updated });
   } catch (e: any) {
     console.error("updateOne error:", e);
-    // if record not found, service throws
     return res.status(400).json({ message: e?.message || "Update failed" });
   }
 };

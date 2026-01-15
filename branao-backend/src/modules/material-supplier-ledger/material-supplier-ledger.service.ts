@@ -24,6 +24,13 @@ function toRequiredDecimal(v: any, fallback = 0) {
   return n;
 }
 
+function toOptionalDate(v: any) {
+  if (!v) return null;
+  const dt = new Date(v);
+  if (isNaN(dt.getTime())) return null;
+  return dt;
+}
+
 async function safeUnlink(filePath?: string) {
   if (!filePath) return;
   try {
@@ -39,7 +46,7 @@ async function uploadToCloudinary(file: Express.Multer.File, folder: string) {
     folder,
     resource_type: "image",
   });
-  return res.secure_url; // ✅ store this in DB
+  return res.secure_url;
 }
 
 /* =========================
@@ -56,67 +63,86 @@ export const getLedger = async (ledgerId: string, siteId?: string | null) => {
 };
 
 /* =========================
-   BULK CREATE
+   BULK CREATE (UPDATED)
+   ✅ files optional
+   ✅ row-wise entryDate allowed: row.entryDate preferred
 ========================= */
 export const createBulk = async (args: {
-  entryDate: string;
+  entryDate: string | null; // optional fallback
   ledgerId: string;
   siteId: string | null;
   rows: any[];
-  unloadingFiles: Express.Multer.File[];
-  receiptFiles: Express.Multer.File[];
+  unloadingFiles: Express.Multer.File[]; // may be []
+  receiptFiles: Express.Multer.File[]; // may be []
 }) => {
-  const { entryDate, ledgerId, siteId, rows, unloadingFiles, receiptFiles } = args;
+  const { entryDate, ledgerId, siteId, rows, unloadingFiles, receiptFiles } =
+    args;
 
-  const dt = new Date(entryDate);
-  if (isNaN(dt.getTime())) throw new Error("Invalid entryDate");
   if (!Array.isArray(rows) || rows.length === 0) throw new Error("rows required");
   if (!ledgerId) throw new Error("ledgerId required");
 
-  if (unloadingFiles.length !== rows.length || receiptFiles.length !== rows.length) {
-    throw new Error("Files count must match rows count");
+  // fallback date (if provided) else now
+  const fallbackDt = toOptionalDate(entryDate) || new Date();
+
+  // files optional: validate only if any uploaded
+  const anyFilesUploaded =
+    (unloadingFiles?.length || 0) > 0 || (receiptFiles?.length || 0) > 0;
+
+  if (anyFilesUploaded) {
+    if (unloadingFiles.length !== rows.length || receiptFiles.length !== rows.length) {
+      throw new Error("Files count must match rows count");
+    }
   }
 
-  const uploadedVehicleUrls: string[] = [];
-  const uploadedReceiptUrls: string[] = [];
+  const uploadedVehicleUrls: Array<string | null> = [];
+  const uploadedReceiptUrls: Array<string | null> = [];
 
   try {
+    // Upload only if files exist, else null placeholders
     for (let i = 0; i < rows.length; i++) {
       const vFile = unloadingFiles[i];
       const rFile = receiptFiles[i];
 
-      const vehicleUrl = await uploadToCloudinary(vFile, "material-ledger/vehicle");
-      const receiptUrl = await uploadToCloudinary(rFile, "material-ledger/receipt");
+      if (vFile) {
+        const vehicleUrl = await uploadToCloudinary(vFile, "material-ledger/vehicle");
+        uploadedVehicleUrls.push(vehicleUrl);
+        await safeUnlink(vFile?.path);
+      } else {
+        uploadedVehicleUrls.push(null);
+      }
 
-      uploadedVehicleUrls.push(vehicleUrl);
-      uploadedReceiptUrls.push(receiptUrl);
-
-      await safeUnlink(vFile?.path);
-      await safeUnlink(rFile?.path);
+      if (rFile) {
+        const receiptUrl = await uploadToCloudinary(rFile, "material-ledger/receipt");
+        uploadedReceiptUrls.push(receiptUrl);
+        await safeUnlink(rFile?.path);
+      } else {
+        uploadedReceiptUrls.push(null);
+      }
     }
 
     const created = await prisma.$transaction(async (tx) => {
       for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
+        const r = rows[i] || {};
 
-        const rate = toRequiredDecimal(r?.rate, 0);
+        // ✅ row-wise date
+        const rowDt = toOptionalDate(r?.entryDate) || fallbackDt;
 
         await tx.materialSupplierLedger.create({
           data: {
-            entryDate: dt,
+            entryDate: rowDt,
 
             receiptNo: r?.receiptNo ? String(r.receiptNo) : null,
-            parchiPhoto: uploadedReceiptUrls[i], // ✅ Cloudinary URL
+            parchiPhoto: uploadedReceiptUrls[i] || null,
             otp: r?.otp ? String(r.otp) : null,
 
             vehicleNo: r?.vehicleNo ? String(r.vehicleNo) : null,
-            vehiclePhoto: uploadedVehicleUrls[i], // ✅ Cloudinary URL
+            vehiclePhoto: uploadedVehicleUrls[i] || null,
 
             material: String(r?.material || "").trim(),
             size: r?.size ? String(r.size) : null,
 
             qty: toRequiredDecimal(r?.qty, 0),
-            rate: rate,
+            rate: toRequiredDecimal(r?.rate, 0),
 
             royaltyQty: toOptionalDecimal(r?.royaltyQty),
             royaltyRate: toOptionalDecimal(r?.royaltyRate),
@@ -141,8 +167,8 @@ export const createBulk = async (args: {
 
     return created;
   } catch (e) {
-    for (const f of unloadingFiles) await safeUnlink(f?.path);
-    for (const f of receiptFiles) await safeUnlink(f?.path);
+    for (const f of unloadingFiles || []) await safeUnlink(f?.path);
+    for (const f of receiptFiles || []) await safeUnlink(f?.path);
     throw e;
   }
 };
@@ -165,31 +191,70 @@ export const updateOne = async (id: string, body: any) => {
       entryDate: entryDate ? entryDate : undefined,
       siteId: body?.siteId !== undefined ? (body.siteId || null) : undefined,
 
-      receiptNo: body?.receiptNo !== undefined ? (body.receiptNo ? String(body.receiptNo) : null) : undefined,
-      parchiPhoto: body?.parchiPhoto !== undefined ? (body.parchiPhoto ? String(body.parchiPhoto) : null) : undefined,
-      otp: body?.otp !== undefined ? (body.otp ? String(body.otp) : null) : undefined,
+      receiptNo:
+        body?.receiptNo !== undefined
+          ? body.receiptNo
+            ? String(body.receiptNo)
+            : null
+          : undefined,
+      parchiPhoto:
+        body?.parchiPhoto !== undefined
+          ? body.parchiPhoto
+            ? String(body.parchiPhoto)
+            : null
+          : undefined,
+      otp:
+        body?.otp !== undefined
+          ? body.otp
+            ? String(body.otp)
+            : null
+          : undefined,
 
-      vehicleNo: body?.vehicleNo !== undefined ? (body.vehicleNo ? String(body.vehicleNo) : null) : undefined,
-      vehiclePhoto: body?.vehiclePhoto !== undefined ? (body.vehiclePhoto ? String(body.vehiclePhoto) : null) : undefined,
+      vehicleNo:
+        body?.vehicleNo !== undefined
+          ? body.vehicleNo
+            ? String(body.vehicleNo)
+            : null
+          : undefined,
+      vehiclePhoto:
+        body?.vehiclePhoto !== undefined
+          ? body.vehiclePhoto
+            ? String(body.vehiclePhoto)
+            : null
+          : undefined,
 
-      material: body?.material !== undefined ? String(body.material || "").trim() : undefined,
-      size: body?.size !== undefined ? (body.size ? String(body.size) : null) : undefined,
+      material:
+        body?.material !== undefined ? String(body.material || "").trim() : undefined,
+      size:
+        body?.size !== undefined ? (body.size ? String(body.size) : null) : undefined,
 
       qty: body?.qty !== undefined ? toRequiredDecimal(body.qty, 0) : undefined,
       rate: body?.rate !== undefined ? toRequiredDecimal(body.rate, 0) : undefined,
 
-      royaltyQty: body?.royaltyQty !== undefined ? toOptionalDecimal(body.royaltyQty) : undefined,
-      royaltyRate: body?.royaltyRate !== undefined ? toOptionalDecimal(body.royaltyRate) : undefined,
-      royaltyAmt: body?.royaltyAmt !== undefined ? toOptionalDecimal(body.royaltyAmt) : undefined,
+      royaltyQty:
+        body?.royaltyQty !== undefined ? toOptionalDecimal(body.royaltyQty) : undefined,
+      royaltyRate:
+        body?.royaltyRate !== undefined ? toOptionalDecimal(body.royaltyRate) : undefined,
+      royaltyAmt:
+        body?.royaltyAmt !== undefined ? toOptionalDecimal(body.royaltyAmt) : undefined,
 
-      gstPercent: body?.gstPercent !== undefined ? toOptionalDecimal(body.gstPercent) : undefined,
+      gstPercent:
+        body?.gstPercent !== undefined ? toOptionalDecimal(body.gstPercent) : undefined,
       taxAmt: body?.taxAmt !== undefined ? toOptionalDecimal(body.taxAmt) : undefined,
-      totalAmt: body?.totalAmt !== undefined ? toOptionalDecimal(body.totalAmt) : undefined,
+      totalAmt:
+        body?.totalAmt !== undefined ? toOptionalDecimal(body.totalAmt) : undefined,
 
-      paymentAmt: body?.paymentAmt !== undefined ? toOptionalDecimal(body.paymentAmt) : undefined,
-      balanceAmt: body?.balanceAmt !== undefined ? toOptionalDecimal(body.balanceAmt) : undefined,
+      paymentAmt:
+        body?.paymentAmt !== undefined ? toOptionalDecimal(body.paymentAmt) : undefined,
+      balanceAmt:
+        body?.balanceAmt !== undefined ? toOptionalDecimal(body.balanceAmt) : undefined,
 
-      remarks: body?.remarks !== undefined ? (body.remarks ? String(body.remarks) : null) : undefined,
+      remarks:
+        body?.remarks !== undefined
+          ? body.remarks
+            ? String(body.remarks)
+            : null
+          : undefined,
     },
   });
 };
@@ -219,31 +284,44 @@ export const bulkUpdate = async (rows: any[]) => {
           entryDate: entryDate ? entryDate : undefined,
           siteId: r?.siteId !== undefined ? (r.siteId || null) : undefined,
 
-          receiptNo: r?.receiptNo !== undefined ? (r.receiptNo ? String(r.receiptNo) : null) : undefined,
-          parchiPhoto: r?.parchiPhoto !== undefined ? (r.parchiPhoto ? String(r.parchiPhoto) : null) : undefined,
+          receiptNo:
+            r?.receiptNo !== undefined ? (r.receiptNo ? String(r.receiptNo) : null) : undefined,
+          parchiPhoto:
+            r?.parchiPhoto !== undefined ? (r.parchiPhoto ? String(r.parchiPhoto) : null) : undefined,
           otp: r?.otp !== undefined ? (r.otp ? String(r.otp) : null) : undefined,
 
-          vehicleNo: r?.vehicleNo !== undefined ? (r.vehicleNo ? String(r.vehicleNo) : null) : undefined,
-          vehiclePhoto: r?.vehiclePhoto !== undefined ? (r.vehiclePhoto ? String(r.vehiclePhoto) : null) : undefined,
+          vehicleNo:
+            r?.vehicleNo !== undefined ? (r.vehicleNo ? String(r.vehicleNo) : null) : undefined,
+          vehiclePhoto:
+            r?.vehiclePhoto !== undefined ? (r.vehiclePhoto ? String(r.vehiclePhoto) : null) : undefined,
 
-          material: r?.material !== undefined ? String(r.material || "").trim() : undefined,
+          material:
+            r?.material !== undefined ? String(r.material || "").trim() : undefined,
           size: r?.size !== undefined ? (r.size ? String(r.size) : null) : undefined,
 
           qty: r?.qty !== undefined ? toRequiredDecimal(r.qty, 0) : undefined,
           rate: r?.rate !== undefined ? toRequiredDecimal(r.rate, 0) : undefined,
 
-          royaltyQty: r?.royaltyQty !== undefined ? toOptionalDecimal(r.royaltyQty) : undefined,
-          royaltyRate: r?.royaltyRate !== undefined ? toOptionalDecimal(r.royaltyRate) : undefined,
-          royaltyAmt: r?.royaltyAmt !== undefined ? toOptionalDecimal(r.royaltyAmt) : undefined,
+          royaltyQty:
+            r?.royaltyQty !== undefined ? toOptionalDecimal(r.royaltyQty) : undefined,
+          royaltyRate:
+            r?.royaltyRate !== undefined ? toOptionalDecimal(r.royaltyRate) : undefined,
+          royaltyAmt:
+            r?.royaltyAmt !== undefined ? toOptionalDecimal(r.royaltyAmt) : undefined,
 
-          gstPercent: r?.gstPercent !== undefined ? toOptionalDecimal(r.gstPercent) : undefined,
+          gstPercent:
+            r?.gstPercent !== undefined ? toOptionalDecimal(r.gstPercent) : undefined,
           taxAmt: r?.taxAmt !== undefined ? toOptionalDecimal(r.taxAmt) : undefined,
-          totalAmt: r?.totalAmt !== undefined ? toOptionalDecimal(r.totalAmt) : undefined,
+          totalAmt:
+            r?.totalAmt !== undefined ? toOptionalDecimal(r.totalAmt) : undefined,
 
-          paymentAmt: r?.paymentAmt !== undefined ? toOptionalDecimal(r.paymentAmt) : undefined,
-          balanceAmt: r?.balanceAmt !== undefined ? toOptionalDecimal(r.balanceAmt) : undefined,
+          paymentAmt:
+            r?.paymentAmt !== undefined ? toOptionalDecimal(r.paymentAmt) : undefined,
+          balanceAmt:
+            r?.balanceAmt !== undefined ? toOptionalDecimal(r.balanceAmt) : undefined,
 
-          remarks: r?.remarks !== undefined ? (r.remarks ? String(r.remarks) : null) : undefined,
+          remarks:
+            r?.remarks !== undefined ? (r.remarks ? String(r.remarks) : null) : undefined,
         },
       });
     }

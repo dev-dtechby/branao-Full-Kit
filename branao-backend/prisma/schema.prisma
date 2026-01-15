@@ -7,83 +7,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-////////////////////////////////////////////////
-/// GLOBAL SOFT DELETE & AUDIT MENTAL MODEL
-/// ----------------------------------------
-/// isDeleted = false  → Active
-/// isDeleted = true   → Deleted (Recoverable)
-/// deletedAt != null  → Delete timestamp
-/// deletedBy          → User/Admin ID
-////////////////////////////////////////////////
-
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= DEPARTMENT =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model Department {
-  id   String @id @default(cuid())
-  name String @unique
-
+  id        String    @id @default(cuid())
+  name      String    @unique
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
   deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  sites    Site[]
-  vouchers Voucher[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  sites     Site[]
+  vouchers  Voucher[]
 
   @@index([isDeleted])
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= SITE =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model Site {
-  id       String   @id @default(cuid())
-  siteName String
-  tenderNo String?
-  sdAmount Decimal? @db.Decimal(18, 2)
-
-  // 🔹 PROFIT PAGE STATUS
-  status SiteStatus @default(NOT_STARTED)
-
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
-
-  expenses      SiteExpense[]
-  receipts      SiteReceipt[] // 🔥 Amt Received
-  documents     SiteDocument[]
-  estimate      SiteEstimate?
-  vouchers      Voucher[]
-  ledgers       Ledger[]
-  staffExpenses StaffExpense[]
-
-  // ✅ Material Purchase / Supplier Ledger Entries (Site wise)
+  id                      String                   @id @default(cuid())
+  siteName                String
+  tenderNo                String?
+  sdAmount                Decimal?                 @db.Decimal(18, 2)
+  status                  SiteStatus               @default(NOT_STARTED)
+  departmentId            String?
+  isDeleted               Boolean                  @default(false)
+  deletedAt               DateTime?
+  deletedBy               String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  ledgers                 Ledger[]
   materialSupplierLedgers MaterialSupplierLedger[] @relation("SiteMaterialSupplierLedgers")
-
-  // ✅ NEW: Site-wise Unified Transactions (All modules impact)
-  siteTransactions SiteTransaction[]
-
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  department              Department?              @relation(fields: [departmentId], references: [id])
+  documents               SiteDocument[]
+  estimate                SiteEstimate?
+  expenses                SiteExpense[]
+  receipts                SiteReceipt[]
+  siteTransactions        SiteTransaction[]
+  staffExpenses           StaffExpense[]
+  vouchers                Voucher[]
 
   @@index([departmentId])
   @@index([status])
   @@index([isDeleted])
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= SITE ESTIMATE =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model SiteEstimate {
-  id     String @id @default(cuid())
-  siteId String @unique
-
+  id              String   @id @default(cuid())
+  siteId          String   @unique
   cement          Decimal? @db.Decimal(18, 2)
   metal           Decimal? @db.Decimal(18, 2)
   sand            Decimal? @db.Decimal(18, 2)
@@ -94,21 +71,18 @@ model SiteEstimate {
   dressing        Decimal? @db.Decimal(18, 2)
   waterCompaction Decimal? @db.Decimal(18, 2)
   loading         Decimal? @db.Decimal(18, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= SITE DOCUMENT =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model SiteDocument {
-  id     String       @id @default(cuid())
-  siteId String
-  type   DocumentType
-
+  id           String       @id @default(cuid())
+  siteId       String
+  type         DocumentType
   url          String?
   secureUrl    String
   publicId     String
@@ -116,41 +90,33 @@ model SiteDocument {
   bytes        Int?
   format       String?
   originalName String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  site Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  site         Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@unique([siteId, type], map: "uniq_site_single_docs")
   @@index([siteId, type])
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= SITE EXPENSE =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model SiteExpense {
-  id String @id @default(cuid())
-
-  siteId String
-  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
-
+  id             String        @id @default(cuid())
+  siteId         String
   expenseDate    DateTime
   expenseTitle   String
   summary        String
   paymentDetails String?
-  amount         Decimal  @db.Decimal(18, 2)
-
-  // ✅ LINK TO STAFF EXPENSE (for sync)
+  amount         Decimal       @db.Decimal(18, 2)
   staffExpenseId String?       @unique
-  staffExpense   StaffExpense? @relation("StaffExpenseToSiteExpense", fields: [staffExpenseId], references: [id], onDelete: SetNull)
-
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isDeleted      Boolean       @default(false)
+  deletedAt      DateTime?
+  deletedBy      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  site           Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  staffExpense   StaffExpense? @relation("StaffExpenseToSiteExpense", fields: [staffExpenseId], references: [id])
 
   @@index([siteId])
   @@index([expenseDate])
@@ -158,62 +124,250 @@ model SiteExpense {
   @@index([staffExpenseId])
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= SITE RECEIPT =================
 /// 🔥 AMT RECEIVED (PROFIT MODULE)
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model SiteReceipt {
-  id String @id @default(cuid())
-
-  siteId String
-  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
-
+  id           String    @id @default(cuid())
+  siteId       String
   receiptDate  DateTime
   referenceNo  String?
   receivedFrom String?
   paymentMode  String?
-  amount       Decimal  @db.Decimal(18, 2)
+  amount       Decimal   @db.Decimal(18, 2)
   remarks      String?
-
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+  deletedBy    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  site         Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
   @@index([siteId])
   @@index([receiptDate])
   @@index([isDeleted])
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ================= AUDIT LOG (GLOBAL) =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 model AuditLog {
-  id String @id @default(cuid())
-
-  userId   String?
-  module   String // Site | Expense | Department | Receipt | etc.
-  recordId String
-  action   AuditAction
-
-  oldData Json?
-  newData Json?
-
+  id        String      @id @default(cuid())
+  userId    String?
+  module    String
+  recordId  String
+  action    AuditAction
+  oldData   Json?
+  newData   Json?
   ip        String?
   userAgent String?
-
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
 
   @@index([module])
   @@index([recordId])
   @@index([action])
 }
 
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
+/// =============== VOUCHER ====================
+/// /////////////////////////////////////////////
+model Voucher {
+  id                   String     @id @default(cuid())
+  voucherDate          DateTime
+  siteId               String
+  departmentId         String
+  grossAmt             Decimal?   @db.Decimal(18, 2)
+  withheld             Decimal?   @db.Decimal(18, 2)
+  incomeTax            Decimal?   @db.Decimal(18, 2)
+  revenue              Decimal?   @db.Decimal(18, 2)
+  lwf                  Decimal?   @db.Decimal(18, 2)
+  royalty              Decimal?   @db.Decimal(18, 2)
+  miscDeduction        Decimal?   @db.Decimal(18, 2)
+  karmkarTax           Decimal?   @db.Decimal(18, 2)
+  securedDeposit       Decimal?   @db.Decimal(18, 2)
+  tdsOnGst             Decimal?   @db.Decimal(18, 2)
+  tds                  Decimal?   @db.Decimal(18, 2)
+  performanceGuarantee Decimal?   @db.Decimal(18, 2)
+  gst                  Decimal?   @db.Decimal(18, 2)
+  improperFinishing    Decimal?   @db.Decimal(18, 2)
+  otherDeduction       Decimal?   @db.Decimal(18, 2)
+  deductionAmt         Decimal?   @db.Decimal(18, 2)
+  chequeAmt            Decimal    @db.Decimal(18, 2)
+  voucherFileUrl       String?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  department           Department @relation(fields: [departmentId], references: [id])
+  site                 Site       @relation(fields: [siteId], references: [id])
+
+  @@index([siteId])
+  @@index([departmentId])
+}
+
+/// /////////////////////////////////////////////
+/// ============== LEDGER TYPE ================
+/// /////////////////////////////////////////////
+model LedgerType {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  ledgers   Ledger[]
+
+  @@index([isDeleted])
+}
+
+/// /////////////////////////////////////////////
+/// ================= LEDGER ==================
+/// /////////////////////////////////////////////
+model Ledger {
+  id                      String                   @id @default(cuid())
+  ledgerTypeId            String
+  siteId                  String?
+  name                    String
+  address                 String?
+  mobile                  String?
+  openingBalance          Decimal?                 @db.Decimal(18, 2)
+  closingBalance          Decimal?                 @db.Decimal(18, 2)
+  remark                  String?
+  isDeleted               Boolean                  @default(false)
+  deletedAt               DateTime?
+  deletedBy               String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  ledgerType              LedgerType               @relation(fields: [ledgerTypeId], references: [id])
+  site                    Site?                    @relation(fields: [siteId], references: [id])
+  materialSupplierLedgers MaterialSupplierLedger[] @relation("LedgerMaterialSupplierLedgers")
+  paymentEntries          PaymentEntry[]
+  staffExpenses           StaffExpense[]
+
+  @@index([ledgerTypeId])
+  @@index([siteId])
+  @@index([isDeleted])
+}
+
+/// /////////////////////////////////////////////
+/// =============== STAFF EXPENSE ==============
+/// /////////////////////////////////////////////
+model StaffExpense {
+  id            String       @id @default(cuid())
+  staffLedgerId String
+  siteId        String?
+  expenseDate   DateTime
+  expenseTitle  String
+  summary       String?
+  remark        String?
+  outAmount     Decimal?     @db.Decimal(18, 2)
+  inAmount      Decimal?     @db.Decimal(18, 2)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  siteExpense   SiteExpense? @relation("StaffExpenseToSiteExpense")
+  site          Site?        @relation(fields: [siteId], references: [id])
+  staffLedger   Ledger       @relation(fields: [staffLedgerId], references: [id])
+
+  @@index([siteId], map: "StaffExpense_siteId_fkey")
+  @@index([staffLedgerId], map: "StaffExpense_staffLedgerId_fkey")
+}
+
+/// /////////////////////////////////////////////
+/// ============ MATERIAL SUPPLIER LEDGER (TRANSACTIONS) ============
+/// /////////////////////////////////////////////
+model MaterialSupplierLedger {
+  id           String   @id @default(cuid())
+  entryDate    DateTime
+  receiptNo    String?
+  parchiPhoto  String?  @db.Text
+  otp          String?
+  vehicleNo    String?
+  vehiclePhoto String?  @db.Text
+  material     String
+  size         String?
+  qty          Decimal  @db.Decimal(12, 3)
+  rate         Decimal  @db.Decimal(12, 2)
+  royaltyQty   Decimal? @db.Decimal(12, 3)
+  royaltyRate  Decimal? @db.Decimal(12, 2)
+  royaltyAmt   Decimal? @db.Decimal(12, 2)
+  gstPercent   Decimal? @db.Decimal(5, 2)
+  taxAmt       Decimal? @db.Decimal(12, 2)
+  totalAmt     Decimal? @db.Decimal(12, 2)
+  paymentAmt   Decimal? @db.Decimal(12, 2)
+  balanceAmt   Decimal? @db.Decimal(12, 2)
+  remarks      String?
+  ledgerId     String
+  siteId       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  ledger       Ledger   @relation("LedgerMaterialSupplierLedgers", fields: [ledgerId], references: [id])
+  site         Site?    @relation("SiteMaterialSupplierLedgers", fields: [siteId], references: [id])
+
+  @@index([ledgerId])
+  @@index([siteId])
+  @@index([entryDate])
+}
+
+/// /////////////////////////////////////////////
+/// =============== MATERIAL MASTER ================
+/// /////////////////////////////////////////////
+model MaterialMaster {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([isDeleted])
+  @@index([name])
+}
+
+model SiteTransaction {
+  id        String        @id @default(cuid())
+  siteId    String
+  txnDate   DateTime
+  source    SiteTxnSource
+  sourceId  String
+  nature    SiteTxnNature
+  amount    Decimal       @db.Decimal(18, 2)
+  title     String?
+  remarks   String?
+  meta      Json?
+  isDeleted Boolean       @default(false)
+  deletedAt DateTime?
+  deletedBy String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  site      Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([source, sourceId])
+  @@index([siteId])
+  @@index([txnDate])
+  @@index([siteId, txnDate])
+  @@index([source, sourceId])
+  @@index([isDeleted])
+}
+
+model PaymentEntry {
+  id          String   @id @default(cuid())
+  ledgerId    String
+  entryDate   DateTime
+  paymentMode String
+  particulars String?
+  amount      Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  ledger      Ledger   @relation(fields: [ledgerId], references: [id])
+
+  @@index([ledgerId])
+  @@index([entryDate])
+}
+
+/// /////////////////////////////////////////////
 /// ================= ENUMS =================
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 enum DocumentType {
   SD
   WORK_ORDER
@@ -235,203 +389,9 @@ enum AuditAction {
   HARD_DELETE
 }
 
-////////////////////////////////////////////////
-/// =============== VOUCHER ====================
-////////////////////////////////////////////////
-model Voucher {
-  id String @id @default(cuid())
-
-  voucherDate DateTime
-
-  siteId String
-  site   Site   @relation(fields: [siteId], references: [id])
-
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id])
-
-  grossAmt             Decimal? @db.Decimal(18, 2)
-  withheld             Decimal? @db.Decimal(18, 2)
-  incomeTax            Decimal? @db.Decimal(18, 2)
-  revenue              Decimal? @db.Decimal(18, 2)
-  lwf                  Decimal? @db.Decimal(18, 2)
-  royalty              Decimal? @db.Decimal(18, 2)
-  miscDeduction        Decimal? @db.Decimal(18, 2)
-  karmkarTax           Decimal? @db.Decimal(18, 2)
-  securedDeposit       Decimal? @db.Decimal(18, 2)
-  tdsOnGst             Decimal? @db.Decimal(18, 2)
-  tds                  Decimal? @db.Decimal(18, 2)
-  performanceGuarantee Decimal? @db.Decimal(18, 2)
-  gst                  Decimal? @db.Decimal(18, 2)
-  improperFinishing    Decimal? @db.Decimal(18, 2)
-  otherDeduction       Decimal? @db.Decimal(18, 2)
-  deductionAmt         Decimal? @db.Decimal(18, 2)
-
-  chequeAmt Decimal @db.Decimal(18, 2) // 🔥 ACTUAL RECEIVED AMOUNT
-
-  voucherFileUrl String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([siteId])
-  @@index([departmentId])
-}
-
-////////////////////////////////////////////////
-/// ============== LEDGER TYPE ================
-////////////////////////////////////////////////
-model LedgerType {
-  id   String @id @default(cuid())
-  name String @unique
-
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  ledgers Ledger[]
-
-  @@index([isDeleted])
-}
-
-////////////////////////////////////////////////
-/// ================= LEDGER ==================
-////////////////////////////////////////////////
-model Ledger {
-  id String @id @default(cuid())
-
-  ledgerTypeId String
-  ledgerType   LedgerType @relation(fields: [ledgerTypeId], references: [id])
-
-  siteId String?
-  site   Site?   @relation(fields: [siteId], references: [id])
-
-  name    String
-  address String?
-  mobile  String?
-
-  openingBalance Decimal? @db.Decimal(18, 2)
-  closingBalance Decimal? @db.Decimal(18, 2)
-  remark         String?
-
-  staffExpenses StaffExpense[]
-
-  // ✅ Material Supplier Ledger entries (Party-wise)
-  materialSupplierLedgers MaterialSupplierLedger[] @relation("LedgerMaterialSupplierLedgers")
-
-  paymentEntries PaymentEntry[]
-
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([ledgerTypeId])
-  @@index([siteId])
-  @@index([isDeleted])
-}
-
-////////////////////////////////////////////////
-/// =============== STAFF EXPENSE ==============
-////////////////////////////////////////////////
-model StaffExpense {
-  id String @id @default(cuid())
-
-  staffLedgerId String
-  staffLedger   Ledger @relation(fields: [staffLedgerId], references: [id])
-
-  siteId String?
-  site   Site?   @relation(fields: [siteId], references: [id])
-
-  expenseDate  DateTime
-  expenseTitle String
-  summary      String?
-  remark       String?
-
-  outAmount Decimal? @db.Decimal(18, 2)
-  inAmount  Decimal? @db.Decimal(18, 2)
-
-  // ✅ reverse link (optional but best)
-  siteExpense SiteExpense? @relation("StaffExpenseToSiteExpense")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-////////////////////////////////////////////////
-/// ============ MATERIAL SUPPLIER LEDGER (TRANSACTIONS) ============
-////////////////////////////////////////////////
-model MaterialSupplierLedger {
-  id String @id @default(cuid())
-
-  entryDate    DateTime
-  receiptNo    String?
-  parchiPhoto  String?  @db.Text // Cloudinary secureUrl
-  otp          String? // if needed
-  vehicleNo    String?
-  vehiclePhoto String?  @db.Text // Cloudinary secureUrl
-
-  material String
-  size     String?
-  qty      Decimal @db.Decimal(12, 3)
-  rate     Decimal @db.Decimal(12, 2)
-
-  royaltyQty  Decimal? @db.Decimal(12, 3)
-  royaltyRate Decimal? @db.Decimal(12, 2)
-  royaltyAmt  Decimal? @db.Decimal(12, 2)
-
-  gstPercent Decimal? @db.Decimal(5, 2)
-  taxAmt     Decimal? @db.Decimal(12, 2)
-  totalAmt   Decimal? @db.Decimal(12, 2)
-
-  paymentAmt Decimal? @db.Decimal(12, 2)
-  balanceAmt Decimal? @db.Decimal(12, 2)
-
-  remarks String?
-
-  // ✅ UNIVERSAL PARTY via Ledger
-  ledgerId String
-
-  // ✅ Site (keep optional if you want; make mandatory if "always site-based")
-  siteId String?
-
-  ledger Ledger @relation("LedgerMaterialSupplierLedgers", fields: [ledgerId], references: [id])
-
-  site Site? @relation("SiteMaterialSupplierLedgers", fields: [siteId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([ledgerId])
-  @@index([siteId])
-  @@index([entryDate])
-}
-
-////////////////////////////////////////////////
-/// =============== MATERIAL MASTER ================
-////////////////////////////////////////////////
-model MaterialMaster {
-  id   String @id @default(cuid())
-  name String @unique
-
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([isDeleted])
-  @@index([name])
-}
-
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 /// ============ SITE TRANSACTION (UNIFIED) ============
-////////////////////////////////////////////////
+/// /////////////////////////////////////////////
 enum SiteTxnSource {
   SITE_EXPENSE
   SITE_RECEIPT
@@ -441,66 +401,6 @@ enum SiteTxnSource {
 }
 
 enum SiteTxnNature {
-  DEBIT // cost
-  CREDIT // income
-}
-
-model SiteTransaction {
-  id String @id @default(cuid())
-
-  siteId String
-  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
-
-  txnDate  DateTime
-  source   SiteTxnSource
-  sourceId String // original record id (e.g. SiteExpense.id)
-  nature   SiteTxnNature
-  amount   Decimal       @db.Decimal(18, 2)
-
-  title   String?
-  remarks String?
-  meta    Json?
-
-  // ✅ keep same soft delete pattern
-  isDeleted Boolean   @default(false)
-  deletedAt DateTime?
-  deletedBy String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ✅ NEW (IMPORTANT): for upsert (source+sourceId is unique)
-  @@unique([source, sourceId])
-  @@index([siteId])
-  @@index([txnDate])
-  @@index([siteId, txnDate])
-  @@index([source, sourceId])
-  @@index([isDeleted])
-}
-
-enum PaymentMode {
-  CASH
-  BANK
-  UPI
-  CHEQUE
-  NEFT_RTGS
-  OTHER
-}
-
-model PaymentEntry {
-  id String @id @default(cuid())
-
-  ledgerId String
-  ledger   Ledger @relation(fields: [ledgerId], references: [id])
-
-  entryDate   DateTime
-  paymentMode String
-  particulars String?
-  amount      Decimal  @db.Decimal(18, 2)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([ledgerId])
-  @@index([entryDate])
+  DEBIT
+  CREDIT
 }

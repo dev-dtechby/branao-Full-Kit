@@ -44,6 +44,37 @@ const findMatchingSiteExpense = async (params: {
   });
 };
 
+const n = (v: any, fallback = 0) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : fallback;
+};
+
+/**
+ * ✅ IMPORTANT:
+ * Staff ledger balance must be computed as:
+ * SUM(inAmount) - SUM(outAmount) across ALL staffExpense rows (ignore siteId)
+ */
+const recomputeAndSyncStaffLedgerBalance = async (staffLedgerId: string) => {
+  const agg = await prisma.staffExpense.aggregate({
+    where: { staffLedgerId },
+    _sum: { inAmount: true, outAmount: true },
+  });
+
+  const sumIn = n(agg?._sum?.inAmount, 0);
+  const sumOut = n(agg?._sum?.outAmount, 0);
+  const balance = sumIn - sumOut;
+
+  // store in Ledger.closingBalance for quick UI
+  await prisma.ledger.update({
+    where: { id: staffLedgerId },
+    data: {
+      closingBalance: String(balance),
+    },
+  });
+
+  return balance;
+};
+
 /* ======================================================
    CREATE STAFF EXPENSE / RECEIPT (OUT + IN)
 ====================================================== */
@@ -147,16 +178,20 @@ export const createStaffExpense = async (req: Request, res: Response) => {
           paymentDetails: staffLedger.name,
           amount: parsedOut,
 
-          // ✅ FIX: use relation connect (NOT staffExpenseId field)
+          // ✅ relation connect
           staffExpense: { connect: { id: staffExpense.id } },
         },
       });
     }
 
+    // ✅ sync staff ledger balance (overall)
+    const balance = await recomputeAndSyncStaffLedgerBalance(staffLedgerId);
+
     return res.json({
       success: true,
       message: "Staff expense created successfully",
       data: staffExpense,
+      ledgerBalance: balance,
     });
   } catch (error) {
     console.error("CREATE STAFF EXPENSE ERROR", error);
@@ -189,9 +224,17 @@ export const getStaffLedgerEntries = async (req: Request, res: Response) => {
       orderBy: { expenseDate: "asc" },
     });
 
+    // ✅ also return current computed balance (optional, UI can use later)
+    const agg = await prisma.staffExpense.aggregate({
+      where: { staffLedgerId },
+      _sum: { inAmount: true, outAmount: true },
+    });
+    const balance = n(agg?._sum?.inAmount, 0) - n(agg?._sum?.outAmount, 0);
+
     return res.json({
       success: true,
       data: entries,
+      balance,
     });
   } catch (error) {
     console.error("GET STAFF LEDGER ERROR", error);
@@ -287,12 +330,12 @@ export const updateStaffExpense = async (req: Request, res: Response) => {
 
     const ledgerName = await getLedgerName(existing.staffLedgerId);
 
-    // ✅ BEST: first try direct link by staffExpenseId (new schema)
+    // ✅ BEST: direct link by staffExpenseId
     let mirror = await prisma.siteExpense.findFirst({
       where: { staffExpenseId: id },
     });
 
-    // fallback legacy matching (old records)
+    // fallback legacy matching
     const oldOut = existing.outAmount != null ? Number(existing.outAmount) : null;
     if (!mirror && oldOut && existing.siteId && ledgerName) {
       mirror = await findMatchingSiteExpense({
@@ -350,8 +393,6 @@ export const updateStaffExpense = async (req: Request, res: Response) => {
             summary: summary || expenseTitle,
             paymentDetails: ledgerName,
             amount: newOut,
-
-            // ✅ FIX: relation connect
             staffExpense: { connect: { id } },
           },
         });
@@ -369,10 +410,14 @@ export const updateStaffExpense = async (req: Request, res: Response) => {
       }
     }
 
+    // ✅ sync staff ledger balance (overall) after update
+    const balance = await recomputeAndSyncStaffLedgerBalance(existing.staffLedgerId);
+
     return res.json({
       success: true,
       message: "Staff expense updated successfully",
       data: updated,
+      ledgerBalance: balance,
     });
   } catch (error) {
     console.error("UPDATE STAFF EXPENSE ERROR", error);

@@ -1,5 +1,3 @@
-// D:\Projects\branao.in\clone\branao-Full-Kit\app\[lang]\(dashboard)\(ledger)\material-supplier-ledger\components\MaterialLedgerTable.tsx
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -27,7 +25,6 @@ import {
   exportSupplierLedgerToPDF,
 } from "./ExportSupplilerLedger";
 
-
 /* ================= API BASE ================= */
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
@@ -35,6 +32,7 @@ const SITE_API = `${BASE_URL}/api/sites`;
 const SUPPLIER_API = `${BASE_URL}/api/material-suppliers`;
 const LEDGER_API = `${BASE_URL}/api/material-supplier-ledger`;
 const MATERIAL_MASTER_API = `${BASE_URL}/api/material-master`;
+const PAYMENT_API = `${BASE_URL}/api/payments`;
 
 /* ================= TYPES ================= */
 type Site = { id: string; siteName: string };
@@ -81,6 +79,64 @@ type LedgerRow = {
   balanceAmt?: number | null;
 };
 
+type PaymentRow = {
+  id: string;
+  ledgerId: string;
+  entryDate: string;
+  paymentMode?: string | null;
+  particulars?: string | null;
+  particular?: string | null; // service alias
+  amount: number;
+};
+
+/* ================= DISPLAY (MERGED) ROW ================= */
+type DisplayRow =
+  | {
+      kind: "PURCHASE";
+      id: string; // purchase id
+      entryDate: string;
+      siteId?: string | null;
+      site?: { id: string; siteName: string } | null;
+
+      receiptNo?: string | null;
+      parchiPhoto?: string | null;
+      otp?: string | null;
+      vehicleNo?: string | null;
+      vehiclePhoto?: string | null;
+
+      material: string;
+      size?: string | null;
+
+      qty: number;
+      rate: number;
+
+      royaltyQty?: number | null;
+      royaltyRate?: number | null;
+      royaltyAmt?: number | null;
+
+      gstPercent?: number | null;
+      taxAmt?: number | null;
+      totalAmt?: number | null;
+
+      // computed
+      total: number; // +ve
+      payment: number; // 0 (payment rows separate)
+      balanceAfter: number; // running
+    }
+  | {
+      kind: "PAYMENT";
+      id: string; // pay_<id>
+      entryDate: string;
+
+      paymentMode?: string | null;
+      particular?: string | null;
+
+      // computed
+      total: number; // 0
+      payment: number; // +ve in Payment column
+      balanceAfter: number; // running
+    };
+
 /* ================= HELPERS ================= */
 function formatDate(d: string) {
   const dt = new Date(d);
@@ -98,10 +154,12 @@ function n(v: any) {
 
 const cleanStr = (v: any) => String(v ?? "").trim();
 
-/* ✅ Total = Qty * Rate | Balance = Total - Payment */
-const rowTotal = (r: LedgerRow) => n(r.qty) * n(r.rate);
-const rowPayment = (r: LedgerRow) => n(r.paymentAmt);
-const rowBalance = (r: LedgerRow) => rowTotal(r) - rowPayment(r);
+/* ✅ Total: Prefer DB totalAmt, else Qty*Rate */
+const rowTotal = (r: LedgerRow) => {
+  const t = r.totalAmt;
+  if (t !== null && t !== undefined && !Number.isNaN(Number(t))) return n(t);
+  return n(r.qty) * n(r.rate);
+};
 
 export default function MaterialLedgerTable() {
   /* ================= MASTER DATA ================= */
@@ -114,9 +172,13 @@ export default function MaterialLedgerTable() {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
 
-  /* ================= LEDGER ================= */
+  /* ================= LEDGER (PURCHASE ROWS) ================= */
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  /* ================= PAYMENTS ================= */
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
 
   /* ================= PURCHASE MODAL ================= */
   const [openPurchase, setOpenPurchase] = useState(false);
@@ -146,7 +208,7 @@ export default function MaterialLedgerTable() {
   /* ================= ✅ MATERIAL LIST COLLAPSE ================= */
   const [materialListOpen, setMaterialListOpen] = useState(true);
 
-  /* ✅ Site map (Fix: show siteName even if backend doesn't include `site`) */
+  /* ✅ Site map */
   const siteNameById = useMemo(() => {
     const m = new Map<string, string>();
     sites.forEach((s) => m.set(s.id, s.siteName));
@@ -237,9 +299,7 @@ export default function MaterialLedgerTable() {
     [sites, selectedSiteId]
   );
 
-
-  
-  /* ================= LOAD LEDGER ================= */
+  /* ================= LOAD LEDGER (PURCHASE) ================= */
   async function loadLedger() {
     if (!selectedSupplierId) {
       setRows([]);
@@ -272,12 +332,46 @@ export default function MaterialLedgerTable() {
     }
   }
 
+  /* ================= LOAD PAYMENTS ================= */
+  async function loadPayments() {
+    if (!selectedSupplierId) {
+      setPayments([]);
+      return;
+    }
+    try {
+      setPaymentsLoading(true);
+
+      const params = new URLSearchParams();
+      params.set("ledgerId", selectedSupplierId);
+
+      const res = await fetch(`${PAYMENT_API}?${params.toString()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        setPayments([]);
+        return;
+      }
+
+      const json = await res.json().catch(() => ({}));
+      const list = Array.isArray(json) ? json : json?.data || [];
+      setPayments(list);
+    } catch (e) {
+      console.error(e);
+      setPayments([]);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadLedger();
+    loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSupplierId, selectedSiteId]);
 
-  /* ✅ keep selection clean when rows change */
+  /* ✅ keep selection clean when purchase rows change */
   useEffect(() => {
     setSelectedIds((prev) => {
       const next = new Set<string>();
@@ -289,43 +383,7 @@ export default function MaterialLedgerTable() {
     });
   }, [rows]);
 
-  /* ================= ✅ BULK SELECTION HELPERS ================= */
-  const visibleIds = useMemo(() => rows.map((r) => r.id), [rows]);
-  const allVisibleSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
-
-  const toggleRow = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAllVisible = () => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
-      else visibleIds.forEach((id) => next.add(id));
-      return next;
-    });
-  };
-
-  const selectedRows = useMemo(
-    () => rows.filter((r) => selectedIds.has(r.id)),
-    [rows, selectedIds]
-  );
-
-  /* ================= TOTALS ================= */
-  const totals = useMemo(() => {
-    const totalPay = rows.reduce((a, r) => a + rowPayment(r), 0);
-    const totalAmt = rows.reduce((a, r) => a + rowTotal(r), 0);
-    const balance = totalAmt - totalPay;
-    return { totalAmt, totalPay, balance };
-  }, [rows]);
-
-  /* ================= ✅ MATERIAL SUMMARY ================= */
+  /* ================= ✅ MATERIAL SUMMARY (PURCHASE ONLY) ================= */
   const materialCards = useMemo(() => {
     const masterNames = (materials || [])
       .map((m) => cleanStr(m.name))
@@ -372,40 +430,194 @@ export default function MaterialLedgerTable() {
     return cards;
   }, [rows, materials]);
 
-  /* ================= ACTION HANDLERS (placeholder) ================= */
-  /* ================= EXPORT DATA ================= */
-  const exportRows = (selectedIds.size ? selectedRows : rows).map((r) => {
-    const total = rowTotal(r);
-    const payment = rowPayment(r);
-    const balance = rowBalance(r);
+  /* ================= ✅ MERGE PURCHASE + PAYMENT (date-wise) + RUNNING BALANCE ================= */
+  const displayRows: DisplayRow[] = useMemo(() => {
+    // purchase rows mapped
+    const purchaseItems: DisplayRow[] = rows.map((r) => ({
+      kind: "PURCHASE",
+      id: r.id,
+      entryDate: r.entryDate,
+      siteId: r.siteId ?? null,
+      site: r.site ?? null,
 
-    const siteName =
-      r.site?.siteName || (r.siteId ? siteNameById.get(r.siteId) : "") || "-";
+      receiptNo: r.receiptNo ?? null,
+      parchiPhoto: r.parchiPhoto ?? null,
+      otp: r.otp ?? null,
+      vehicleNo: r.vehicleNo ?? null,
+      vehiclePhoto: r.vehiclePhoto ?? null,
 
-    return {
-      "DATE": formatDate(r.entryDate),
-      "Site": siteName,
-      "Receipt No": r.receiptNo || "",
-      "Vehicle No": r.vehicleNo || "",
-      "Material": r.material || "",
-      "Size": r.size || "",
-      "Qty": r.qty ?? "",
-      "Rate": n(r.rate).toFixed(2),
-      "Royalty Qty": r.royaltyQty ?? "",
-      "Royalty Rate": r.royaltyRate != null ? n(r.royaltyRate).toFixed(2) : "",
-      "Royalty Amt": r.royaltyAmt != null ? n(r.royaltyAmt).toFixed(2) : "",
-      "GST": r.gstPercent != null ? `${n(r.gstPercent)}%` : "",
-      "Tax Amt": r.taxAmt != null ? n(r.taxAmt).toFixed(2) : "",
-      "Total": total.toFixed(2),
-      "Payment": payment.toFixed(2),
-      "Balance": balance.toFixed(2),
-    };
-  });
+      material: r.material,
+      size: r.size ?? null,
+      qty: n(r.qty),
+      rate: n(r.rate),
 
+      royaltyQty: r.royaltyQty ?? null,
+      royaltyRate: r.royaltyRate ?? null,
+      royaltyAmt: r.royaltyAmt ?? null,
+
+      gstPercent: r.gstPercent ?? null,
+      taxAmt: r.taxAmt ?? null,
+      totalAmt: r.totalAmt ?? null,
+
+      total: rowTotal(r), // + purchase
+      payment: 0,
+      balanceAfter: 0,
+    }));
+
+    // payment entries (ledgerId already same because API is filtered by ledgerId)
+    const paymentItems: DisplayRow[] = (payments || []).map((p) => ({
+      kind: "PAYMENT",
+      id: `pay_${p.id}`,
+      entryDate: p.entryDate,
+      paymentMode: p.paymentMode ?? null,
+      particular: (p.particular ?? p.particulars ?? null) as any,
+      total: 0,
+      payment: n(p.amount), // payment column me ye amount
+      balanceAfter: 0,
+    }));
+
+    // merge & sort by date ASC (ledger running)
+    const merged = [...purchaseItems, ...paymentItems].sort((a, b) => {
+      const da = new Date(a.entryDate).getTime();
+      const db = new Date(b.entryDate).getTime();
+      if (da !== db) return da - db;
+
+      // same date: purchases first, then payments (stable)
+      if (a.kind !== b.kind) return a.kind === "PURCHASE" ? -1 : 1;
+      return String(a.id).localeCompare(String(b.id));
+    });
+
+    // running balance: purchase +, payment -
+    let running = 0;
+    for (const item of merged) {
+      if (item.kind === "PURCHASE") running += n(item.total);
+      else running -= n(item.payment);
+
+      item.balanceAfter = running;
+    }
+
+    return merged;
+  }, [rows, payments]);
+
+  /* ================= ✅ BULK SELECTION (PURCHASE ONLY) ================= */
+  const visiblePurchaseIds = useMemo(
+    () => displayRows.filter((r) => r.kind === "PURCHASE").map((r) => r.id),
+    [displayRows]
+  );
+
+  const allVisibleSelected =
+    visiblePurchaseIds.length > 0 &&
+    visiblePurchaseIds.every((id) => selectedIds.has(id));
+
+  const toggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visiblePurchaseIds.forEach((id) => next.delete(id));
+      else visiblePurchaseIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const selectedRows = useMemo(
+    () => rows.filter((r) => selectedIds.has(r.id)),
+    [rows, selectedIds]
+  );
+
+  /* ================= TOTALS ================= */
+  const totals = useMemo(() => {
+    const totalAmt = rows.reduce((a, r) => a + rowTotal(r), 0); // purchases sum
+    const totalPay = payments.reduce((a, p) => a + n(p.amount), 0); // payments sum
+    const balance = totalAmt - totalPay; // payable outstanding
+    return { totalAmt, totalPay, balance };
+  }, [rows, payments]);
+
+  /* ================= EXPORT DATA =================
+     - If any selection (purchase only) => export only selected purchases
+     - Else => export merged ledger statement (purchase + payment)
+  ================================================== */
+  const exportRows = useMemo(() => {
+    const hasSelection = selectedIds.size > 0;
+
+    if (hasSelection) {
+      // export only selected purchases (existing behavior preserved)
+      return selectedRows.map((r) => {
+        const total = rowTotal(r);
+        const siteName =
+          r.site?.siteName || (r.siteId ? siteNameById.get(r.siteId) : "") || "-";
+
+        return {
+          "TYPE": "PURCHASE",
+          "DATE": formatDate(r.entryDate),
+          "Site": siteName,
+          "Receipt No": r.receiptNo || "",
+          "Vehicle No": r.vehicleNo || "",
+          "Material": r.material || "",
+          "Size": r.size || "",
+          "Qty": r.qty ?? "",
+          "Rate": n(r.rate).toFixed(2),
+          "Royalty Qty": r.royaltyQty ?? "",
+          "Royalty Rate": r.royaltyRate != null ? n(r.royaltyRate).toFixed(2) : "",
+          "Royalty Amt": r.royaltyAmt != null ? n(r.royaltyAmt).toFixed(2) : "",
+          "GST": r.gstPercent != null ? `${n(r.gstPercent)}%` : "",
+          "Tax Amt": r.taxAmt != null ? n(r.taxAmt).toFixed(2) : "",
+          "Total": total.toFixed(2),
+          "Payment": "0.00",
+          "Balance": "",
+        };
+      });
+    }
+
+    // no selection => export merged statement
+    return displayRows.map((dr) => {
+      if (dr.kind === "PURCHASE") {
+        const siteName =
+          dr.site?.siteName || (dr.siteId ? siteNameById.get(dr.siteId) : "") || "-";
+
+        return {
+          "TYPE": "PURCHASE",
+          "DATE": formatDate(dr.entryDate),
+          "Site": siteName,
+          "Receipt No": dr.receiptNo || "",
+          "Vehicle No": dr.vehicleNo || "",
+          "Material/Particular": dr.material || "",
+          "Size": dr.size || "",
+          "Qty": dr.qty ?? "",
+          "Rate": n(dr.rate).toFixed(2),
+          "Total": n(dr.total).toFixed(2),
+          "Payment": "0.00",
+          "Balance": n(dr.balanceAfter).toFixed(2),
+        };
+      }
+
+      return {
+        "TYPE": "PAYMENT",
+        "DATE": formatDate(dr.entryDate),
+        "Site": "",
+        "Receipt No": "",
+        "Vehicle No": "",
+        "Material/Particular": dr.particular || "Payment",
+        "Size": "",
+        "Qty": "",
+        "Rate": "",
+        "Total": "0.00",
+        "Payment": n(dr.payment).toFixed(2),
+        "Balance": n(dr.balanceAfter).toFixed(2),
+      };
+    });
+  }, [selectedIds, selectedRows, displayRows, siteNameById]);
 
   const exportExcel = () => {
     setExportOpen(false);
-    exportSupplierLedgerToExcel(exportRows, "Supplier_Ledger", {
+    exportSupplierLedgerToExcel(exportRows as any, "Supplier_Ledger", {
       supplierName: selectedSupplier?.name || supplierQuery || "",
       siteName: selectedSite?.siteName || "All Sites",
     });
@@ -413,27 +625,21 @@ export default function MaterialLedgerTable() {
 
   const exportPDF = () => {
     setExportOpen(false);
-    exportSupplierLedgerToPDF(exportRows, "Supplier_Ledger", {
+    exportSupplierLedgerToPDF(exportRows as any, "Supplier_Ledger", {
       supplierName: selectedSupplier?.name || supplierQuery || "",
       siteName: selectedSite?.siteName || "All Sites",
     });
   };
 
-
-  const triggerImport = () => {
-    importInputRef.current?.click();
-  };
-
+  /* ================= ACTION HANDLERS ================= */
+  const triggerImport = () => importInputRef.current?.click();
   const onImportFile = (file?: File) => {
     if (!file) return;
     console.log("Import file selected:", file.name);
   };
+  const addRoyalty = () => console.log("Add Royalty clicked");
 
-  const addRoyalty = () => {
-    console.log("Add Royalty clicked");
-  };
-
-  /* ================= ✅ BULK DELETE ================= */
+  /* ================= ✅ BULK DELETE (PURCHASE ONLY) ================= */
   const confirmBulkDelete = async () => {
     if (selectedIds.size === 0) return;
 
@@ -451,6 +657,7 @@ export default function MaterialLedgerTable() {
       setBulkDeleteOpen(false);
       setSelectedIds(new Set());
       await loadLedger();
+      await loadPayments();
     } catch (e: any) {
       alert(e?.message || "Bulk delete failed");
     } finally {
@@ -458,7 +665,7 @@ export default function MaterialLedgerTable() {
     }
   };
 
-  /* ================= ✅ SINGLE DELETE ================= */
+  /* ================= ✅ SINGLE DELETE (PURCHASE ONLY) ================= */
   const openSingleDelete = (id: string) => {
     setSingleDeleteId(id);
     setSingleDeleteOpen(true);
@@ -481,7 +688,9 @@ export default function MaterialLedgerTable() {
         next.delete(singleDeleteId);
         return next;
       });
+
       await loadLedger();
+      await loadPayments();
     } catch (e: any) {
       alert(e?.message || "Delete failed");
     } finally {
@@ -489,26 +698,32 @@ export default function MaterialLedgerTable() {
     }
   };
 
-  /* ================= ✅ ROW EDIT (use existing Bulk Edit modal for single row) ================= */
+  /* ================= ✅ ROW EDIT (PURCHASE ONLY) ================= */
   const editRow = (id: string) => {
     setSelectedIds(new Set([id]));
     setOpenBulkEdit(true);
   };
 
-  /* ================= ✅ PAYMENT ENTRY (distribute payment across selected rows) ================= */
+  /* ================= ✅ PAYMENT ENTRY (OPEN) ================= */
   const openPaymentEntry = () => {
     if (!selectedSupplierId) {
       alert("Please select supplier first.");
       return;
     }
+    // Payment entry ledger-wise hai, aap row select optional rakhna chaho to,
+    // but aapke existing UX me selectedIds required tha — same rakha.
     if (selectedIds.size === 0) {
-      alert("Please select at least 1 row for payment entry.");
+      alert("Please select at least 1 purchase row for payment entry.");
       return;
     }
     setPaymentAmount("");
     setOpenPayment(true);
   };
 
+  /* ================= ✅ SAVE PAYMENT ENTRY
+     - Purchase rows me paymentAmt update (aapka existing behavior)
+     - PaymentEntry table me new record create
+  ============================================================ */
   const savePaymentEntry = async () => {
     const amt = n(paymentAmount);
     if (!amt || amt <= 0) {
@@ -520,29 +735,24 @@ export default function MaterialLedgerTable() {
       return;
     }
 
-    // sort selected rows by entryDate (oldest first)
-    const sorted = [...selectedRows].sort((a, b) => {
-      const da = new Date(a.entryDate).getTime();
-      const db = new Date(b.entryDate).getTime();
-      return da - db;
-    });
+    // distribute across selected purchase rows oldest first (existing)
+    const selectedPurchaseRows = rows
+      .filter((r) => selectedIds.has(r.id))
+      .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime());
 
-    // compute updates
     let remaining = amt;
     const updates: Array<{ id: string; paymentAmt: number }> = [];
 
-    for (const r of sorted) {
+    for (const r of selectedPurchaseRows) {
       if (remaining <= 0) break;
 
       const total = rowTotal(r);
-      const paid = rowPayment(r);
+      const paid = n(r.paymentAmt);
       const due = Math.max(0, total - paid);
       if (due <= 0) continue;
 
       const alloc = Math.min(due, remaining);
-      const newPaid = paid + alloc;
-
-      updates.push({ id: r.id, paymentAmt: newPaid });
+      updates.push({ id: r.id, paymentAmt: paid + alloc });
       remaining -= alloc;
     }
 
@@ -554,7 +764,7 @@ export default function MaterialLedgerTable() {
     try {
       setPaymentSaving(true);
 
-      // ✅ safest: update one-by-one using existing PUT /:id
+      // update purchase rows (existing)
       for (const u of updates) {
         const res = await fetch(`${LEDGER_API}/${u.id}`, {
           method: "PUT",
@@ -565,18 +775,33 @@ export default function MaterialLedgerTable() {
         if (!res.ok) throw new Error("Payment update failed on some rows");
       }
 
+      // create payment entry
+      const pRes = await fetch(`${PAYMENT_API}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ledgerId: selectedSupplierId,
+          entryDate: new Date().toISOString(),
+          paymentMode: "Bank",
+          particular: "Material Supplier Payment",
+          amount: amt,
+        }),
+      });
+
+      if (!pRes.ok) {
+        const j = await pRes.json().catch(() => ({}));
+        throw new Error(j?.message || "Payment entry save failed");
+      }
+
       setOpenPayment(false);
       setPaymentAmount("");
 
-      // keep selection as-is (optional). You can clear if you want:
-      // setSelectedIds(new Set());
-
       await loadLedger();
+      await loadPayments();
 
       if (remaining > 0) {
-        alert(
-          `Payment saved. Extra amount not used: ₹ ${remaining.toFixed(2)} (rows fully paid)`
-        );
+        alert(`Payment saved. Extra amount not used: ₹ ${remaining.toFixed(2)}`);
       } else {
         alert("Payment saved successfully.");
       }
@@ -599,7 +824,6 @@ export default function MaterialLedgerTable() {
           </CardTitle>
 
           <div className="w-full lg:w-auto">
-            {/* ✅ Contact box removed, Payment Entry button added */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               {/* Supplier */}
               <div className="w-full lg:w-[260px]">
@@ -611,6 +835,7 @@ export default function MaterialLedgerTable() {
                     if (!e.target.value) {
                       setSelectedSupplierId("");
                       setSelectedIds(new Set());
+                      setPayments([]);
                     }
                   }}
                   onBlur={() => {
@@ -643,7 +868,7 @@ export default function MaterialLedgerTable() {
                 ))}
               </select>
 
-              {/* ✅ Payment Entry */}
+              {/* Payment Entry */}
               <Button
                 variant="outline"
                 className="h-9 w-full lg:w-[170px]"
@@ -653,7 +878,7 @@ export default function MaterialLedgerTable() {
                   !selectedSupplierId
                     ? "Select supplier first"
                     : selectedIds.size === 0
-                    ? "Select rows for payment"
+                    ? "Select purchase rows for payment"
                     : "Payment Entry"
                 }
               >
@@ -705,7 +930,6 @@ export default function MaterialLedgerTable() {
                     <div className="text-[11px] text-muted-foreground">Summary</div>
                   </div>
 
-                  {/* values visible */}
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <Input
                       value={m.qty ? String(m.qty) : ""}
@@ -739,7 +963,9 @@ export default function MaterialLedgerTable() {
             </div>
 
             <div className="p-2 rounded-lg border bg-red-100/80 dark:bg-red-900/40">
-              <p className="text-[10px] md:text-[11px] text-default-700">Total Pay</p>
+              <p className="text-[10px] md:text-[11px] text-default-700">
+                Total Pay {paymentsLoading ? "(Loading...)" : ""}
+              </p>
               <p className="text-base md:text-lg font-bold text-red-700 dark:text-red-300 leading-tight">
                 ₹ {totals.totalPay.toFixed(2)}
               </p>
@@ -780,7 +1006,7 @@ export default function MaterialLedgerTable() {
               <Button
                 variant="outline"
                 className="h-10 flex items-center gap-2"
-                disabled={!rows.length}
+                disabled={!displayRows.length}
                 onClick={() => setExportOpen((p) => !p)}
               >
                 <Download className="h-4 w-4" />
@@ -829,7 +1055,7 @@ export default function MaterialLedgerTable() {
           </div>
         </div>
 
-        {/* ---------------- LEDGER TABLE ---------------- */}
+        {/* ---------------- LEDGER TABLE (MERGED) ---------------- */}
         <div className="rounded-md border overflow-hidden">
           <div className={`${tableMaxHeightClass} overflow-y-auto`}>
             <div style={{ overflowX: "auto" }}>
@@ -855,7 +1081,7 @@ export default function MaterialLedgerTable() {
                         "OTP",
                         "Vehicle No",
                         "Vehicle Photo",
-                        "Material",
+                        "Material / Particular",
                         "Size",
                         "Qty",
                         "Rate",
@@ -883,47 +1109,59 @@ export default function MaterialLedgerTable() {
                           Loading...
                         </td>
                       </tr>
-                    ) : !rows.length ? (
+                    ) : !displayRows.length ? (
                       <tr>
                         <td className="p-4 text-muted-foreground" colSpan={21}>
                           No data
                         </td>
                       </tr>
                     ) : (
-                      rows.map((row) => {
-                        const checked = selectedIds.has(row.id);
-                        const total = rowTotal(row);
-                        const payment = rowPayment(row);
-                        const balance = rowBalance(row);
+                      displayRows.map((row) => {
+                        const isPurchase = row.kind === "PURCHASE";
+                        const checked = isPurchase ? selectedIds.has(row.id) : false;
 
-                        const siteName =
-                          row.site?.siteName ||
-                          (row.siteId ? siteNameById.get(row.siteId) : "") ||
-                          "-";
+                        const siteName = isPurchase
+                          ? row.site?.siteName ||
+                            (row.siteId ? siteNameById.get(row.siteId) : "") ||
+                            "-"
+                          : "-";
+
+                        // row styles: payment rows highlighted slightly
+                        const rowClass =
+                          row.kind === "PAYMENT"
+                            ? "border-t bg-amber-50/40 hover:bg-amber-50/70"
+                            : `border-t hover:bg-default-50 ${checked ? "bg-primary/10" : ""}`;
 
                         return (
-                          <tr
-                            key={row.id}
-                            className={`border-t hover:bg-default-50 ${
-                              checked ? "bg-primary/10" : ""
-                            }`}
-                          >
+                          <tr key={row.id} className={rowClass}>
                             <td className="p-3">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleRow(row.id)}
-                                aria-label={`Select row ${row.id}`}
-                                className="h-4 w-4 accent-primary border border-muted-foreground/40 rounded-sm"
-                              />
+                              {isPurchase ? (
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleRow(row.id)}
+                                  aria-label={`Select row ${row.id}`}
+                                  className="h-4 w-4 accent-primary border border-muted-foreground/40 rounded-sm"
+                                />
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  checked={false}
+                                  disabled
+                                  className="h-4 w-4 opacity-40"
+                                  aria-label="Payment row (not selectable)"
+                                />
+                              )}
                             </td>
 
                             <td className="p-3">{formatDate(row.entryDate)}</td>
                             <td className="p-3">{siteName}</td>
 
-                            <td className="p-3">{row.receiptNo || "-"}</td>
+                            {/* Purchase columns OR Payment placeholders */}
+                            <td className="p-3">{isPurchase ? row.receiptNo || "-" : "-"}</td>
+
                             <td className="p-3">
-                              {row.parchiPhoto ? (
+                              {isPurchase && row.parchiPhoto ? (
                                 <a
                                   className="underline text-primary"
                                   href={row.parchiPhoto}
@@ -936,10 +1174,12 @@ export default function MaterialLedgerTable() {
                                 "-"
                               )}
                             </td>
-                            <td className="p-3">{row.otp || "-"}</td>
-                            <td className="p-3">{row.vehicleNo || "-"}</td>
+
+                            <td className="p-3">{isPurchase ? row.otp || "-" : "-"}</td>
+                            <td className="p-3">{isPurchase ? row.vehicleNo || "-" : "-"}</td>
+
                             <td className="p-3">
-                              {row.vehiclePhoto ? (
+                              {isPurchase && row.vehiclePhoto ? (
                                 <a
                                   className="underline text-primary"
                                   href={row.vehiclePhoto}
@@ -953,54 +1193,85 @@ export default function MaterialLedgerTable() {
                               )}
                             </td>
 
-                            <td className="p-3">{row.material}</td>
-                            <td className="p-3">{row.size || "-"}</td>
-                            <td className="p-3">{row.qty}</td>
-                            <td className="p-3">₹ {n(row.rate).toFixed(2)}</td>
-
-                            <td className="p-3">{row.royaltyQty ?? "-"}</td>
+                            {/* Material / Particular */}
                             <td className="p-3">
-                              {row.royaltyRate != null
-                                ? `₹ ${n(row.royaltyRate).toFixed(2)}`
+                              {isPurchase ? (
+                                row.material
+                              ) : (
+                                <span className="font-medium">
+                                  {row.particular || row.paymentMode || "Payment"}
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="p-3">{isPurchase ? row.size || "-" : "-"}</td>
+                            <td className="p-3">{isPurchase ? row.qty : "-"}</td>
+                            <td className="p-3">{isPurchase ? `₹ ${n(row.rate).toFixed(2)}` : "-"}</td>
+
+                            <td className="p-3">{isPurchase ? row.royaltyQty ?? "-" : "-"}</td>
+                            <td className="p-3">
+                              {isPurchase
+                                ? row.royaltyRate != null
+                                  ? `₹ ${n(row.royaltyRate).toFixed(2)}`
+                                  : "-"
                                 : "-"}
                             </td>
                             <td className="p-3">
-                              {row.royaltyAmt != null
-                                ? `₹ ${n(row.royaltyAmt).toFixed(2)}`
+                              {isPurchase
+                                ? row.royaltyAmt != null
+                                  ? `₹ ${n(row.royaltyAmt).toFixed(2)}`
+                                  : "-"
                                 : "-"}
                             </td>
 
                             <td className="p-3">
-                              {row.gstPercent != null ? `${n(row.gstPercent)}%` : "-"}
+                              {isPurchase ? (row.gstPercent != null ? `${n(row.gstPercent)}%` : "-") : "-"}
                             </td>
                             <td className="p-3">
-                              {row.taxAmt != null ? `₹ ${n(row.taxAmt).toFixed(2)}` : "-"}
+                              {isPurchase ? (row.taxAmt != null ? `₹ ${n(row.taxAmt).toFixed(2)}` : "-") : "-"}
                             </td>
 
-                            <td className="p-3 font-semibold">₹ {total.toFixed(2)}</td>
-                            <td className="p-3">₹ {payment.toFixed(2)}</td>
-                            <td className="p-3">₹ {balance.toFixed(2)}</td>
+                            {/* Total / Payment / Balance */}
+                            <td className="p-3 font-semibold">
+                              {isPurchase ? `₹ ${n(row.total).toFixed(2)}` : "₹ 0.00"}
+                            </td>
 
-                            {/* ✅ Action: Edit + Delete working */}
                             <td className="p-3">
-                              <div className="flex gap-2">
-                                <Button
-                                  size="icon"
-                                  variant="outline"
-                                  onClick={() => editRow(row.id)}
-                                  title="Edit row"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="outline"
-                                  onClick={() => openSingleDelete(row.id)}
-                                  title="Delete row"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+                              {row.kind === "PAYMENT" ? (
+                                <span className="font-semibold text-red-700">₹ {n(row.payment).toFixed(2)}</span>
+                              ) : (
+                                "₹ 0.00"
+                              )}
+                            </td>
+
+                            <td className="p-3">
+                              <span className="font-semibold text-blue-700">₹ {n(row.balanceAfter).toFixed(2)}</span>
+                            </td>
+
+                            {/* Action */}
+                            <td className="p-3">
+                              {isPurchase ? (
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="icon"
+                                    variant="outline"
+                                    onClick={() => editRow(row.id)}
+                                    title="Edit row"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="icon"
+                                    variant="outline"
+                                    onClick={() => openSingleDelete(row.id)}
+                                    title="Delete row"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                "-"
+                              )}
                             </td>
                           </tr>
                         );
@@ -1050,7 +1321,7 @@ export default function MaterialLedgerTable() {
                     className="h-10"
                   />
                   <div className="text-[11px] text-muted-foreground">
-                    Payment selected rows (oldest first) me auto adjust ho jayega.
+                    Payment selected purchase rows (oldest first) me auto adjust ho jayega.
                   </div>
                 </div>
               </div>
@@ -1134,6 +1405,7 @@ export default function MaterialLedgerTable() {
                 setOpenBulkEdit(false);
                 setSelectedIds(new Set());
                 await loadLedger();
+                await loadPayments();
               }}
             />
           </DialogContent>
