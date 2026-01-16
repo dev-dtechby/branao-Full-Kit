@@ -5,15 +5,31 @@ import cloudinary from "../../config/cloudinary";
    CLOUDINARY UPLOAD
 ===================================================== */
 async function uploadToCloudinary(file: Express.Multer.File) {
-  return new Promise<any>((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream({ folder: "branao/sites" }, (err, result) => {
-        if (err) reject(err);
-        else resolve(result);
-      })
-      .end(file.buffer);
-  });
+  const opts = {
+    folder: "branao/sites",
+    resource_type: "auto" as const, // ✅ pdf/doc/image sab allow
+  };
+
+  // ✅ memoryStorage -> buffer
+  if ((file as any).buffer) {
+    return new Promise<any>((resolve, reject) => {
+      cloudinary.uploader
+        .upload_stream(opts, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        })
+        .end((file as any).buffer);
+    });
+  }
+
+  // ✅ diskStorage -> path
+  if ((file as any).path) {
+    return cloudinary.uploader.upload((file as any).path, opts);
+  }
+
+  throw new Error("Invalid file upload: no buffer/path found");
 }
+
 
 /* =====================================================
    SMALL HELPERS (SAFE NORMALIZE)
@@ -142,45 +158,68 @@ export async function updateSite(id: string, data: any, files: any) {
 /* =====================================================
    UPLOAD DOCUMENTS (COMMON)
 ===================================================== */
+// D:\Projects\branao.in\clone\branao-Full-Kit\branao-backend\src\modules\site\site.service.ts
+
 async function uploadDocuments(siteId: string, files: any) {
+  // helper to map cloudinary result safely
+  const mapDoc = (r: any, file?: Express.Multer.File) => ({
+    secureUrl: r.secure_url,
+    publicId: r.public_id,
+    resourceType: r.resource_type,
+    bytes: r.bytes ?? null,
+    format: r.format ?? null,
+    originalName: file?.originalname ?? null,
+  });
+
+  // ✅ SD (single) -> upsert (because @@unique([siteId,type]))
   if (files?.sdFile?.length) {
-    const r = await uploadToCloudinary(files.sdFile[0]);
-    await prisma.siteDocument.create({
-      data: {
+    const file = files.sdFile[0];
+    const r = await uploadToCloudinary(file);
+
+    await prisma.siteDocument.upsert({
+      where: {
+        siteId_type: { siteId, type: "SD" }, // Prisma generates this from @@unique([siteId,type])
+      },
+      update: mapDoc(r, file),
+      create: {
         siteId,
         type: "SD",
-        secureUrl: r.secure_url,
-        publicId: r.public_id,
-        resourceType: r.resource_type,
+        ...mapDoc(r, file),
       },
     });
   }
 
+  // ✅ WORK_ORDER (single) -> upsert
   if (files?.workOrderFile?.length) {
-    const r = await uploadToCloudinary(files.workOrderFile[0]);
-    await prisma.siteDocument.create({
-      data: {
+    const file = files.workOrderFile[0];
+    const r = await uploadToCloudinary(file);
+
+    await prisma.siteDocument.upsert({
+      where: {
+        siteId_type: { siteId, type: "WORK_ORDER" },
+      },
+      update: mapDoc(r, file),
+      create: {
         siteId,
         type: "WORK_ORDER",
-        secureUrl: r.secure_url,
-        publicId: r.public_id,
-        resourceType: r.resource_type,
+        ...mapDoc(r, file),
       },
     });
   }
 
+  // ✅ TENDER (multiple) -> create (no unique constraint)
   if (files?.tenderDocs?.length) {
     for (const file of files.tenderDocs) {
       const r = await uploadToCloudinary(file);
+
       await prisma.siteDocument.create({
         data: {
           siteId,
           type: "TENDER",
-          secureUrl: r.secure_url,
-          publicId: r.public_id,
-          resourceType: r.resource_type,
+          ...mapDoc(r, file),
         },
       });
     }
   }
 }
+

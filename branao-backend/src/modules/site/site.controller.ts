@@ -9,10 +9,7 @@ import { SiteRequest } from "./site.types";
 /* =====================================================
    CREATE SITE  ✅
 ===================================================== */
-export const createSiteHandler = async (
-  req: SiteRequest,
-  res: Response
-): Promise<void> => {
+export const createSiteHandler = async (req: SiteRequest, res: Response) => {
   try {
     const site = await createSite(req.body, req.files);
 
@@ -20,15 +17,16 @@ export const createSiteHandler = async (
       success: true,
       data: site,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Site Create Error:", error);
 
     res.status(500).json({
       success: false,
-      message: "Site create failed",
+      message: error?.message || "Site create failed",
     });
   }
 };
+
 
 /* =====================================================
    GET SITE BY ID  ✅ (EDIT FORM LOAD)
