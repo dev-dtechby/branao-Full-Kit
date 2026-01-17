@@ -20,6 +20,8 @@ import materialSupplierRoutes from "./modules/material-supplier/material-supplie
 import siteTransactionRoutes from "./modules/site-transaction/site-transaction.routes";
 import materialSupplierLedgerRoutes from "./modules/material-supplier-ledger/material-supplier-ledger.routes";
 import paymentRoutes from "./modules/payment/payment.routes";
+import fuelStationsRoutes from "./modules/fuel-stations/fuel-stations.routes";
+import fuelStationLedgerRoutes from "./modules/fuel-station-ledger/fuel-station-ledger.routes";
 
 const app = express();
 
@@ -100,7 +102,8 @@ app.use("/api/material-suppliers", materialSupplierRoutes);
 app.use("/api/site-transactions", siteTransactionRoutes);
 app.use("/api/material-supplier-ledger", materialSupplierLedgerRoutes);
 app.use("/api/payments", paymentRoutes);
-
+app.use("/api/fuel-stations", fuelStationsRoutes);
+app.use("/api/fuel-station-ledger", fuelStationLedgerRoutes);
 
 // ====================
 // 404 HANDLER
