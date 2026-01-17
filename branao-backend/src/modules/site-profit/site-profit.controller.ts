@@ -1,6 +1,18 @@
 import { Request, Response } from "express";
 import prisma from "../../lib/prisma";
 
+const n = (v: any) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+};
+
+const rowTotal = (r: any) => {
+  // prefer DB totalAmt else qty*rate
+  const t = r?.totalAmt;
+  if (t !== null && t !== undefined && !Number.isNaN(Number(t))) return n(t);
+  return n(r?.qty) * n(r?.rate);
+};
+
 export const getSiteProfit = async (_req: Request, res: Response) => {
   try {
     // 1) Base sites (with department + status)
@@ -12,7 +24,9 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       orderBy: { createdAt: "desc" },
     });
 
-    // 2) Expense sum from SiteExpense
+    const siteIds = sites.map((s) => s.id);
+
+    // 2) Expense sum from SiteExpense (manual only)
     const siteExpenseAgg = await prisma.siteExpense.groupBy({
       by: ["siteId"],
       where: { isDeleted: false },
@@ -24,7 +38,28 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       expenseMap.set(r.siteId, Number(r._sum.amount || 0));
     }
 
-    // 3) Received sum from SiteReceipt (profit module old logic)
+    // 3) ✅ AUTO Material cost from MaterialSupplierLedger (qty*rate OR totalAmt)
+    // NOTE: your schema doesn't have isDeleted here, so NO soft delete filter.
+    const matRows = await prisma.materialSupplierLedger.findMany({
+      where: {
+        siteId: { in: siteIds },
+      },
+      select: {
+        siteId: true,
+        qty: true,
+        rate: true,
+        totalAmt: true,
+      },
+    } as any);
+
+    const materialCostMap = new Map<string, number>();
+    for (const r of matRows) {
+      if (!r.siteId) continue;
+      const prev = materialCostMap.get(r.siteId) || 0;
+      materialCostMap.set(r.siteId, prev + rowTotal(r));
+    }
+
+    // 4) Received sum from SiteReceipt
     const siteReceiptAgg = await prisma.siteReceipt.groupBy({
       by: ["siteId"],
       where: { isDeleted: false },
@@ -36,18 +71,21 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       receiptMap.set(r.siteId, Number(r._sum.amount || 0));
     }
 
-    // 4) ✅ Voucher received sum (chequeAmt) — THIS WAS MISSING
+    // 5) Voucher received sum (chequeAmt)
     const voucherAgg = await prisma.voucher.groupBy({
       by: ["siteId"],
+      // if voucher has isDeleted in schema (likely yes), keep it:
+      // where: { isDeleted: false },
       _sum: { chequeAmt: true },
     });
 
     const voucherMap = new Map<string, number>();
     for (const r of voucherAgg) {
+      if (!r.siteId) continue;
       voucherMap.set(r.siteId, Number(r._sum.chequeAmt || 0));
     }
 
-    // 5) ✅ Staff IN sum (only those linked to a site)
+    // 6) Staff IN sum (only those linked to a site)
     const staffInAgg = await prisma.staffExpense.groupBy({
       by: ["siteId"],
       where: {
@@ -63,14 +101,12 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       staffInMap.set(r.siteId, Number(r._sum.inAmount || 0));
     }
 
-    // 6) ✅ Staff OUT (old rows) that are NOT mirrored into SiteExpense yet
-    //    (New rows should be mirrored via SiteExpense.staffExpenseId link)
+    // 7) Staff OUT rows NOT mirrored into SiteExpense yet
     const unMirroredStaffOut = await prisma.staffExpense.findMany({
       where: {
         siteId: { not: null },
         outAmount: { not: null },
-        // relation exists in your schema:
-        siteExpense: { is: null }, // ✅ only those not mirrored
+        siteExpense: { is: null }, // only those not mirrored
       },
       select: { siteId: true, outAmount: true },
     });
@@ -82,12 +118,15 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
       staffOutUnmirroredMap.set(r.siteId, prev + Number(r.outAmount || 0));
     }
 
-    // 7) Build response rows
+    // 8) Build response rows
     const rows = sites.map((s) => {
       const siteId = s.id;
 
+      // ✅ expenses = manual SiteExpense + (unmirrored staff out) + AUTO material purchase
       const expenses =
-        (expenseMap.get(siteId) || 0) + (staffOutUnmirroredMap.get(siteId) || 0);
+        (expenseMap.get(siteId) || 0) +
+        (staffOutUnmirroredMap.get(siteId) || 0) +
+        (materialCostMap.get(siteId) || 0);
 
       const amountReceived =
         (receiptMap.get(siteId) || 0) +
@@ -104,6 +143,9 @@ export const getSiteProfit = async (_req: Request, res: Response) => {
         amountReceived,
         profit,
         status: s.status,
+
+        // optional debug
+        materialPurchaseCost: materialCostMap.get(siteId) || 0,
       };
     });
 

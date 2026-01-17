@@ -413,15 +413,19 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                       <CalendarIcon className="h-4 w-4 opacity-60" />
                                     </button>
                                   </PopoverTrigger>
-                                  <PopoverContent className="p-0" align="start">
+                                  <PopoverContent
+                                    className="p-0 z-[9999]"
+                                    align="start"
+                                    side="bottom"
+                                    sideOffset={8}
+                                  >
                                     <Calendar
                                       mode="single"
                                       selected={r.entryDate}
-                                      onSelect={(d) =>
-                                        updateRow(r.id, { entryDate: d })
-                                      }
+                                      onSelect={(d) => updateRow(r.id, { entryDate: d })}
                                     />
                                   </PopoverContent>
+
                                 </Popover>
                               </td>
 

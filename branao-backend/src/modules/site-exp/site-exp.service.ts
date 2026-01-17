@@ -23,6 +23,32 @@ const toNumOrUndefined = (v: any) => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+const n = (v: any) => {
+  const x = Number(v);
+  return Number.isFinite(x) ? x : 0;
+};
+
+const rowTotal = (r: any) => {
+  // prefer DB totalAmt else qty*rate
+  if (r.totalAmt !== null && r.totalAmt !== undefined && !Number.isNaN(Number(r.totalAmt))) {
+    return n(r.totalAmt);
+  }
+  return n(r.qty) * n(r.rate);
+};
+
+type AutoExpenseRow = {
+  id: string;
+  site: { id: string; siteName: string };
+  expenseDate: string;
+  expenseTitle: string;
+  summary: string;
+  paymentDetails: string;
+  amount: number;
+  isAuto: true;
+  autoSource: "MATERIAL_SUPPLIER_LEDGER";
+  supplierId?: string | null;
+};
+
 const TXN_SOURCE = "SITE_EXPENSE" as const;
 const TXN_NATURE = "DEBIT" as const;
 
@@ -56,7 +82,6 @@ async function upsertTxnForExpense(
 
   const remarks = (expense.paymentDetails || "").trim() || null;
 
-  // ✅ common payload
   const common: any = {
     siteId: expense.siteId,
     txnDate: expense.expenseDate,
@@ -73,14 +98,12 @@ async function upsertTxnForExpense(
     },
   };
 
-  // ✅ optional soft delete sync (if fields exist in SiteTransaction model)
   if (typeof expense.isDeleted === "boolean") {
     common.isDeleted = expense.isDeleted;
     common.deletedAt = expense.deletedAt ?? null;
     common.deletedBy = expense.deletedBy ?? null;
   }
 
-  // ✅ upsert using compound unique key (source + sourceId)
   return tx.siteTransaction.upsert({
     where: {
       source_sourceId: {
@@ -92,6 +115,143 @@ async function upsertTxnForExpense(
     update: common,
   });
 }
+
+/* =========================================================
+   ✅ AUTO EXPENSE FROM MATERIAL SUPPLIER LEDGER
+   - GROUP BY (siteId + material)
+   - amount = SUM(totalAmt if present else qty*rate)
+   - expenseDate = MAX(entryDate) in group
+   - read-only rows: isAuto = true
+========================================================= */
+
+function makeAutoId(siteId: string, material: string) {
+  const slug = material
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 50);
+  return `AUTO_MSL_${siteId}_${slug || "material"}`;
+}
+
+async function getAutoMaterialExpenses(siteId?: string) {
+  // sites map
+  const sites = await prisma.site.findMany({
+    select: { id: true, siteName: true },
+  });
+  const siteNameById = new Map(sites.map((s) => [s.id, s.siteName]));
+
+  const where: any = {};
+  if (siteId) where.siteId = siteId;
+
+  // ✅ fetch ledger rows (must include ledgerId)
+  const ledgerRows = await prisma.materialSupplierLedger.findMany({
+    where,
+    select: {
+      siteId: true,
+      entryDate: true,
+      material: true,
+      qty: true,
+      rate: true,
+      totalAmt: true,
+      ledgerId: true, // ✅ IMPORTANT
+    },
+    orderBy: { entryDate: "desc" },
+  });
+
+  // ✅ build ledgerId set, then fetch Ledger names
+  const ledgerIds = Array.from(
+    new Set(ledgerRows.map((r) => r.ledgerId).filter(Boolean))
+  );
+
+  const ledgers = ledgerIds.length
+    ? await prisma.ledger.findMany({
+        where: { id: { in: ledgerIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+
+  const ledgerNameById = new Map(ledgers.map((l) => [l.id, l.name]));
+
+  // group by (siteId + material)
+  const groups = new Map<
+    string,
+    {
+      siteId: string;
+      material: string;
+      amount: number;
+      maxDate: Date;
+      ledgerNames: Set<string>;
+    }
+  >();
+
+  for (const r of ledgerRows) {
+    if (!r.siteId) continue;
+
+    const material = String(r.material || "").trim();
+    if (!material) continue;
+
+    const amt =
+      r.totalAmt !== null && r.totalAmt !== undefined
+        ? Number(r.totalAmt) || 0
+        : (Number(r.qty) || 0) * (Number(r.rate) || 0);
+
+    const key = `${r.siteId}__${material.toLowerCase()}`;
+
+    const ledgerName =
+      (r.ledgerId ? ledgerNameById.get(r.ledgerId) : null) || "Unknown Ledger";
+
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        siteId: r.siteId,
+        material,
+        amount: amt,
+        maxDate: r.entryDate || new Date(),
+        ledgerNames: new Set([ledgerName]),
+      });
+    } else {
+      existing.amount += amt;
+      const dt = r.entryDate || new Date();
+      if (dt.getTime() > existing.maxDate.getTime()) existing.maxDate = dt;
+      existing.ledgerNames.add(ledgerName);
+    }
+  }
+
+  const formatLedgers = (set: Set<string>) => {
+    const arr = Array.from(set).filter(Boolean);
+    if (!arr.length) return "Unknown Ledger";
+    if (arr.length <= 3) return arr.join(", ");
+    return `${arr.slice(0, 3).join(", ")} +${arr.length - 3} more`;
+  };
+
+  const autoRows = Array.from(groups.values()).map((g) => {
+    const sName = siteNameById.get(g.siteId) || "N/A";
+
+    return {
+      id: makeAutoId(g.siteId, g.material),
+      siteId: g.siteId,
+      expenseDate: g.maxDate,
+      expenseTitle: g.material,
+      summary: "Material Purchase (Auto)",
+      // ✅ Payment column now shows Ledger.name(s)
+      paymentDetails: formatLedgers(g.ledgerNames),
+      amount: Number(g.amount.toFixed(2)),
+      isAuto: true,
+      source: "MATERIAL_LEDGER",
+      site: { id: g.siteId, siteName: sName },
+    };
+  });
+
+  autoRows.sort(
+    (a, b) =>
+      new Date(b.expenseDate as any).getTime() -
+      new Date(a.expenseDate as any).getTime()
+  );
+
+  return autoRows;
+}
+
 
 /* =========================================================
    CREATE SITE EXPENSE  (+ SiteTransaction)
@@ -126,7 +286,6 @@ export const createSiteExpense = async (
       },
     });
 
-    // ✅ Sync SiteTransaction (DEBIT)
     await upsertTxnForExpense(tx, {
       id: created.id,
       siteId: created.siteId,
@@ -140,7 +299,6 @@ export const createSiteExpense = async (
       deletedBy: created.deletedBy,
     });
 
-    // 🔐 AUDIT LOG
     await tx.auditLog.create({
       data: {
         userId,
@@ -156,11 +314,12 @@ export const createSiteExpense = async (
   }, TX_OPTS);
 };
 
+
 /* =========================================================
-   GET ALL SITE EXPENSES (ACTIVE ONLY)
+   ✅ GET ALL SITE EXPENSES (ACTIVE ONLY) + AUTO MATERIAL ROWS
 ========================================================= */
 export const getAllSiteExpenses = async () => {
-  return prisma.siteExpense.findMany({
+  const manual = await prisma.siteExpense.findMany({
     where: { isDeleted: false },
     orderBy: { expenseDate: "desc" },
     include: {
@@ -169,21 +328,56 @@ export const getAllSiteExpenses = async () => {
       },
     },
   });
+
+  const manualMapped = manual.map((x) => ({
+    ...x,
+    isAuto: false,
+    source: "MANUAL",
+  }));
+
+  const auto = await getAutoMaterialExpenses();
+
+  // merge and sort by date desc
+  const merged: any[] = [...manualMapped, ...auto].sort((a, b) => {
+    const da = new Date(a.expenseDate).getTime();
+    const db = new Date(b.expenseDate).getTime();
+    return db - da;
+  });
+
+  return merged;
 };
 
 /* =========================================================
-   GET EXPENSES BY SITE (ACTIVE ONLY)
+   ✅ GET EXPENSES BY SITE (ACTIVE ONLY) + AUTO MATERIAL ROWS
 ========================================================= */
 export const getExpensesBySite = async (siteId: string) => {
-  return prisma.siteExpense.findMany({
+  const manual = await prisma.siteExpense.findMany({
     where: { siteId, isDeleted: false },
     orderBy: { expenseDate: "desc" },
+    include: {
+      site: { select: { id: true, siteName: true } },
+    },
   });
+
+  const manualMapped = manual.map((x) => ({
+    ...x,
+    isAuto: false,
+    source: "MANUAL",
+  }));
+
+  const auto = await getAutoMaterialExpenses(siteId);
+
+  const merged: any[] = [...manualMapped, ...auto].sort((a, b) => {
+    const da = new Date(a.expenseDate).getTime();
+    const db = new Date(b.expenseDate).getTime();
+    return db - da;
+  });
+
+  return merged;
 };
 
 /* =========================================================
    UPDATE SITE EXPENSE (+ SiteTransaction update)
-   ✅ IMPORTANT: do not overwrite fields if not provided
 ========================================================= */
 export const updateSiteExpense = async (
   id: string,
@@ -234,7 +428,6 @@ export const updateSiteExpense = async (
       data: patch,
     });
 
-    // ✅ Sync SiteTransaction
     await upsertTxnForExpense(tx, {
       id: updated.id,
       siteId: updated.siteId,
@@ -248,7 +441,6 @@ export const updateSiteExpense = async (
       deletedBy: updated.deletedBy,
     });
 
-    // 🔐 AUDIT LOG
     await tx.auditLog.create({
       data: {
         userId,
@@ -286,7 +478,6 @@ export const softDeleteSiteExpense = async (
       },
     });
 
-    // ✅ Soft delete linked SiteTransaction (same source + sourceId)
     await tx.siteTransaction.update({
       where: {
         source_sourceId: {
@@ -301,7 +492,6 @@ export const softDeleteSiteExpense = async (
       } as any,
     });
 
-    // 🔐 AUDIT LOG
     await tx.auditLog.create({
       data: {
         userId,
@@ -339,7 +529,6 @@ export const restoreSiteExpense = async (
       },
     });
 
-    // ✅ Restore linked SiteTransaction
     await tx.siteTransaction.update({
       where: {
         source_sourceId: {
@@ -354,7 +543,6 @@ export const restoreSiteExpense = async (
       } as any,
     });
 
-    // 🔐 AUDIT LOG
     await tx.auditLog.create({
       data: {
         userId,
@@ -373,7 +561,6 @@ export const restoreSiteExpense = async (
 
 /* =========================================================
    HARD DELETE SITE EXPENSE (DANGEROUS)
-   ✅ Also remove linked SiteTransaction
 ========================================================= */
 export const hardDeleteSiteExpense = async (
   id: string,
@@ -384,15 +571,12 @@ export const hardDeleteSiteExpense = async (
     const oldData = await tx.siteExpense.findUnique({ where: { id } });
     if (!oldData) throw new Error("Expense not found");
 
-    // ✅ Remove txn first
     await tx.siteTransaction.deleteMany({
       where: { source: TXN_SOURCE, sourceId: id },
     });
 
-    // ✅ Remove expense
     await tx.siteExpense.delete({ where: { id } });
 
-    // 🔐 AUDIT LOG
     await tx.auditLog.create({
       data: {
         userId,
