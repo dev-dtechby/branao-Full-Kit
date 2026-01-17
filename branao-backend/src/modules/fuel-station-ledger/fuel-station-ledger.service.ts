@@ -1,11 +1,15 @@
 import prisma from "../../lib/prisma";
 
+type PurchaseType = "OWN_VEHICLE" | "RENT_VEHICLE";
+
 type BulkRow = {
   rowKey?: string;
 
   entryDate?: string; // ISO (row-wise)
+  slipNo?: string | null;
+
   through?: string | null;
-  purchaseType: "OWN_VEHICLE" | "RENT_VEHICLE";
+  purchaseType: PurchaseType;
 
   vehicleNumber: string;
   vehicleName?: string | null;
@@ -14,7 +18,6 @@ type BulkRow = {
   qty: number | string;
   rate: number | string;
 
-  slipNo?: string | null;
   remarks?: string | null;
 };
 
@@ -39,7 +42,6 @@ function buildExpenseSummary(p: {
   remarks?: string | null;
 }) {
   const parts: string[] = [];
-
   parts.push(`Fuel Station: ${p.fuelStationName}`);
   if (p.fuelType) parts.push(`Fuel: ${p.fuelType}`);
   parts.push(`PurchaseType: ${p.purchaseType}`);
@@ -54,35 +56,43 @@ function buildExpenseSummary(p: {
   return parts.join(" | ");
 }
 
-export async function getLedger(filters: {
-  fuelStationId?: string;
-  siteId?: string;
-}) {
+/**
+ * ✅ GET Ledger rows
+ * - ledgerId = Fuel Station ledger (Ledger table)
+ * - siteId optional
+ */
+export async function getLedger(filters: { ledgerId?: string; siteId?: string }) {
   return prisma.fuelStationLedger.findMany({
     where: {
-      fuelStationId: filters.fuelStationId,
+      ledgerId: filters.ledgerId,
       siteId: filters.siteId,
     },
     include: {
       site: { select: { id: true, siteName: true } },
-      fuelStation: { select: { id: true, name: true } },
+      ledger: { select: { id: true, name: true } },
     },
     orderBy: { entryDate: "asc" },
   });
 }
 
+/**
+ * ✅ CREATE BULK
+ * - Creates SiteExpense for each row
+ * - Creates FuelStationLedger row linked to SiteExpense
+ */
 export async function createBulk(input: {
-  fuelStationId: string;
+  ledgerId: string; // ✅ Fuel Station = Ledger table ID
   siteId: string;
-  entryDate?: string; // fallback
+  entryDate?: string; // fallback date
   rows: BulkRow[];
 }) {
-  const fuelStation = await prisma.fuelStation.findUnique({
-    where: { id: input.fuelStationId },
-    select: { name: true },
+  // ✅ Fuel Station details fetched from Ledger table
+  const fuelStationLedger = await prisma.ledger.findUnique({
+    where: { id: input.ledgerId },
+    select: { id: true, name: true },
   });
 
-  if (!fuelStation) throw new Error("Fuel station not found");
+  if (!fuelStationLedger) throw new Error("Fuel station ledger not found");
 
   const fallbackDate = input.entryDate ? new Date(input.entryDate) : new Date();
 
@@ -104,15 +114,15 @@ export async function createBulk(input: {
       if (!(qty > 0)) throw new Error("qty must be > 0");
       if (!(rate > 0)) throw new Error("rate must be > 0");
 
-      const purchaseType = r.purchaseType;
+      const purchaseType = r.purchaseType as any;
       if (!purchaseType) throw new Error("purchaseType required");
 
-      // 1) create SiteExpense (linked)
+      // 1) create SiteExpense
       const expenseTitle = buildExpenseTitle(fuelType);
       const expenseSummary = buildExpenseSummary({
-        fuelStationName: fuelStation.name,
+        fuelStationName: fuelStationLedger.name,
         fuelType,
-        purchaseType,
+        purchaseType: String(purchaseType),
         vehicleNumber,
         vehicleName: r.vehicleName ?? null,
         through: r.through ?? null,
@@ -129,19 +139,21 @@ export async function createBulk(input: {
           paymentDetails: r.through ? String(r.through).trim() : null,
           amount: amount as any,
         },
+        select: { id: true },
       });
 
       // 2) create FuelStationLedger row
       const ledgerRow = await pr.fuelStationLedger.create({
         data: {
-          fuelStationId: input.fuelStationId,
+          ledgerId: input.ledgerId,
           siteId: input.siteId,
           siteExpenseId: siteExpense.id,
 
           entryDate,
 
+          slipNo: r.slipNo ? String(r.slipNo).trim() : null,
           through: r.through ? String(r.through).trim() : null,
-          purchaseType: purchaseType as any,
+          purchaseType: purchaseType,
 
           vehicleNumber,
           vehicleName: r.vehicleName ? String(r.vehicleName).trim() : null,
@@ -151,12 +163,11 @@ export async function createBulk(input: {
           rate: rate as any,
           amount: amount as any,
 
-          slipNo: r.slipNo ? String(r.slipNo).trim() : null,
           remarks: r.remarks ? String(r.remarks).trim() : null,
         },
         include: {
           site: { select: { id: true, siteName: true } },
-          fuelStation: { select: { id: true, name: true } },
+          ledger: { select: { id: true, name: true } },
         },
       });
 
@@ -169,12 +180,15 @@ export async function createBulk(input: {
   return { count: tx.length, data: tx };
 }
 
+/**
+ * ✅ UPDATE ONE
+ * - updates FuelStationLedger + linked SiteExpense
+ */
 export async function updateOne(id: string, patch: any) {
-  // load current
   const existing = await prisma.fuelStationLedger.findUnique({
     where: { id },
     include: {
-      fuelStation: { select: { name: true } },
+      ledger: { select: { id: true, name: true } },
       siteExpense: { select: { id: true } },
     },
   });
@@ -183,19 +197,16 @@ export async function updateOne(id: string, patch: any) {
 
   const nextQty = patch.qty != null ? n(patch.qty) : n(existing.qty);
   const nextRate = patch.rate != null ? n(patch.rate) : n(existing.rate);
-  const nextAmount =
-    patch.amount != null ? n(patch.amount) : nextQty * nextRate;
+  const nextAmount = patch.amount != null ? n(patch.amount) : nextQty * nextRate;
 
   const nextFuelType =
-    patch.fuelType != null ? String(patch.fuelType).trim() : existing.fuelType;
+    patch.fuelType != null ? String(patch.fuelType).trim() : String(existing.fuelType);
 
   const nextPurchaseType =
     patch.purchaseType != null ? patch.purchaseType : existing.purchaseType;
 
   const nextVehicleNumber =
-    patch.vehicleNumber != null
-      ? String(patch.vehicleNumber).trim()
-      : existing.vehicleNumber;
+    patch.vehicleNumber != null ? String(patch.vehicleNumber).trim() : String(existing.vehicleNumber);
 
   const nextVehicleName =
     patch.vehicleName != null ? String(patch.vehicleName).trim() : existing.vehicleName;
@@ -214,7 +225,7 @@ export async function updateOne(id: string, patch: any) {
 
   const expenseTitle = buildExpenseTitle(nextFuelType);
   const expenseSummary = buildExpenseSummary({
-    fuelStationName: existing.fuelStation?.name || "Fuel Station",
+    fuelStationName: existing.ledger?.name || "Fuel Station",
     fuelType: nextFuelType,
     purchaseType: String(nextPurchaseType),
     vehicleNumber: nextVehicleNumber,
@@ -225,7 +236,7 @@ export async function updateOne(id: string, patch: any) {
   });
 
   return prisma.$transaction(async (pr) => {
-    // 1) update SiteExpense (if linked)
+    // 1) update linked SiteExpense
     if (existing.siteExpenseId) {
       await pr.siteExpense.update({
         where: { id: existing.siteExpenseId },
@@ -239,12 +250,13 @@ export async function updateOne(id: string, patch: any) {
       });
     }
 
-    // 2) update ledger row
+    // 2) update FuelStationLedger
     const updated = await pr.fuelStationLedger.update({
       where: { id },
       data: {
         entryDate: nextEntryDate,
 
+        slipNo: nextSlipNo || null,
         through: nextThrough || null,
         purchaseType: nextPurchaseType as any,
 
@@ -256,12 +268,11 @@ export async function updateOne(id: string, patch: any) {
         rate: nextRate as any,
         amount: nextAmount as any,
 
-        slipNo: nextSlipNo || null,
         remarks: nextRemarks || null,
       },
       include: {
         site: { select: { id: true, siteName: true } },
-        fuelStation: { select: { id: true, name: true } },
+        ledger: { select: { id: true, name: true } },
       },
     });
 
@@ -269,16 +280,19 @@ export async function updateOne(id: string, patch: any) {
   });
 }
 
+/**
+ * ✅ HARD DELETE
+ * - deletes linked SiteExpense also
+ */
 export async function deleteOne(id: string) {
   const row = await prisma.fuelStationLedger.findUnique({
     where: { id },
     select: { id: true, siteExpenseId: true },
   });
+
   if (!row) return;
 
-  // Hard delete (your preference)
   await prisma.$transaction(async (pr) => {
-    // delete linked SiteExpense first (will cascade ledger if schema relation set)
     if (row.siteExpenseId) {
       await pr.siteExpense.delete({ where: { id: row.siteExpenseId } });
       return;

@@ -1,19 +1,24 @@
 "use client";
 
+import ContractorLedgerTable from "./components/ContractorLedgerTable";
+
 interface Props {
   trans: any;
 }
 
-export default function PageView({ trans }: Props) {
+/* ================= API ================= */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
+
+export default function DashboardPageView({ trans }: Props) {
   return (
     <div className="space-y-6">
       <div className="text-2xl font-medium text-default-800">
-        Labour Contractor Entry
+        Labour Contractor Ledger
       </div>
 
-      <div className="card p-6 rounded-md border">
-        <h3 className="text-lg font-semibold">Contractor Billing Form</h3>
-        <p className="text-default-500">Form Coming Soon...</p>
+      <div className="card p-0 rounded-md border overflow-hidden">
+        <ContractorLedgerTable baseUrl={BASE_URL} />
       </div>
     </div>
   );

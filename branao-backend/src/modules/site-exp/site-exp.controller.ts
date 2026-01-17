@@ -218,11 +218,11 @@ export const deleteSiteExpense = async (req: Request, res: Response) => {
     const userId = (req as any).user?.id || "SYSTEM";
     const ip = req.ip;
 
-    await service.softDeleteSiteExpense(id, userId, ip);
+    await service.hardDeleteSiteExpense(id, userId, ip);
 
     return res.status(200).json({
       success: true,
-      message: "Site expense moved to deleted records",
+      message: "Site expense deleted permanently",
     });
   } catch (error) {
     console.error("❌ Delete Site Expense Error:", error);

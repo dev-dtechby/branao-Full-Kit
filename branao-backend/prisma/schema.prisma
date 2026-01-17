@@ -50,6 +50,9 @@ model Site {
   staffExpenses           StaffExpense[]
   vouchers                Voucher[]
   fuelStationLedgers      FuelStationLedger[]
+  labourContracts         LabourContract[]
+  labourPayments          LabourPayment[]
+
   @@index([departmentId])
   @@index([status])
   @@index([isDeleted])
@@ -102,23 +105,23 @@ model SiteDocument {
 /// ================= SITE EXPENSE =================
 /// /////////////////////////////////////////////
 model SiteExpense {
-  id             String        @id @default(cuid())
-  siteId         String
-  expenseDate    DateTime
-  expenseTitle   String
-  summary        String
-  paymentDetails String?
-  amount         Decimal       @db.Decimal(18, 2)
-  staffExpenseId String?       @unique
-  isDeleted      Boolean       @default(false)
-  deletedAt      DateTime?
-  deletedBy      String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  site           Site          @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  staffExpense   StaffExpense? @relation("StaffExpenseToSiteExpense", fields: [staffExpenseId], references: [id])
+  id                String             @id @default(cuid())
+  siteId            String
+  expenseDate       DateTime
+  expenseTitle      String
+  summary           String
+  paymentDetails    String?
+  amount            Decimal            @db.Decimal(18, 2)
+  staffExpenseId    String?            @unique
+  isDeleted         Boolean            @default(false)
+  deletedAt         DateTime?
+  deletedBy         String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  site              Site               @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  staffExpense      StaffExpense?      @relation("StaffExpenseToSiteExpense", fields: [staffExpenseId], references: [id])
   fuelStationLedger FuelStationLedger?
-  
+
   @@index([siteId])
   @@index([expenseDate])
   @@index([isDeleted])
@@ -244,6 +247,7 @@ model Ledger {
   materialSupplierLedgers MaterialSupplierLedger[] @relation("LedgerMaterialSupplierLedgers")
   paymentEntries          PaymentEntry[]
   staffExpenses           StaffExpense[]
+  fuelStationLedgers      FuelStationLedger[]
 
   @@index([ledgerTypeId])
   @@index([siteId])
@@ -405,20 +409,6 @@ enum SiteTxnNature {
   DEBIT
   CREDIT
 }
-/// ================= FUEL STATION MASTER =================
-model FuelStation {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  contactNo String?
-  address   String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  ledgers   FuelStationLedger[]
-
-  @@index([name])
-}
 
 /// ================= FUEL PURCHASE TYPE ENUM =================
 enum FuelPurchaseType {
@@ -428,39 +418,122 @@ enum FuelPurchaseType {
 
 /// ================= FUEL STATION LEDGER =================
 model FuelStationLedger {
-  id             String           @id @default(cuid())
+  id String @id @default(cuid())
 
-  fuelStationId  String
-  siteId         String
-  siteExpenseId  String?          @unique
+  ledgerId String
+  ledger   Ledger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
 
-  entryDate      DateTime
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
 
-  // NEW FIELDS
-  through        String?
-  purchaseType   FuelPurchaseType
+  siteExpenseId String?      @unique
+  siteExpense   SiteExpense? @relation(fields: [siteExpenseId], references: [id], onDelete: Cascade)
 
-  vehicleNumber  String
-  vehicleName    String?
+  entryDate DateTime
 
-  fuelType       String
-  qty            Decimal          @db.Decimal(12, 3)
-  rate           Decimal          @db.Decimal(12, 2)
-  amount         Decimal          @db.Decimal(18, 2)
+  slipNo       String?
+  through      String?
+  purchaseType FuelPurchaseType
 
-  slipNo         String?
-  remarks        String?
+  vehicleNumber String
+  vehicleName   String?
 
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  fuelType String
+  qty      Decimal @db.Decimal(12, 3)
+  rate     Decimal @db.Decimal(12, 2)
+  amount   Decimal @db.Decimal(14, 2)
 
-  fuelStation    FuelStation      @relation(fields: [fuelStationId], references: [id], onDelete: Cascade)
-  site           Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  remarks String?
 
-  // link to SiteExpense (auto created)
-  siteExpense    SiteExpense?     @relation(fields: [siteExpenseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([fuelStationId])
+  @@index([ledgerId])
   @@index([siteId])
   @@index([entryDate])
+}
+
+/**
+ * =========================================================
+ * LABOUR CONTRACTOR + CONTRACTS + PAYMENTS
+ * =========================================================
+ */
+
+model LabourContractor {
+  id      String  @id @default(cuid())
+  name    String
+  mobile  String?
+  address String?
+  notes   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts LabourContract[]
+  payments  LabourPayment[]
+}
+
+model LabourContract {
+  id String @id @default(cuid())
+
+  contractorId String
+  siteId       String
+
+  // Deal Amount (Total agreed for this site)
+  agreedAmount Decimal @default(0)
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  // Agreement paper (Cloudinary URL)
+  agreementUrl  String?
+  agreementName String?
+
+  remarks String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contractor LabourContractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  site       Site             @relation(fields: [siteId], references: [id])
+
+  payments LabourPayment[]
+
+  @@index([contractorId, siteId])
+  @@index([siteId])
+}
+
+enum LabourPaymentMode {
+  CASH
+  BANK
+  UPI
+  CHEQUE
+  OTHER
+}
+
+model LabourPayment {
+  id String @id @default(cuid())
+
+  contractorId String
+  siteId       String
+  contractId   String?
+
+  paymentDate DateTime
+  amount      Decimal
+
+  mode    LabourPaymentMode @default(CASH)
+  refNo   String?
+  through String?
+  remarks String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contractor LabourContractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  site       Site             @relation(fields: [siteId], references: [id])
+  contract   LabourContract?  @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([contractorId, paymentDate])
+  @@index([siteId, paymentDate])
+  @@index([contractId, paymentDate])
 }

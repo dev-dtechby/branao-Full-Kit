@@ -3,40 +3,39 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 /* ================= EXCEL EXPORT ================= */
-export const exportSiteExpenseToExcel = (
-  data: any[],
-  fileName: string
-) => {
+export const exportSiteExpenseToExcel = (data: any[], fileName: string) => {
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
 
-  XLSX.utils.book_append_sheet(
-    workbook,
-    worksheet,
-    "Site Expenses"
-  );
-
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Site Expenses");
   XLSX.writeFile(workbook, `${fileName}.xlsx`);
 };
 
+
 /* ================= PDF EXPORT ================= */
-export const exportSiteExpenseToPDF = (
-  data: any[],
-  fileName: string
-) => {
+export const exportSiteExpenseToPDF = (data: any[], fileName: string) => {
   const doc = new jsPDF("l", "mm", "a4"); // Landscape
 
+  // ✅ Support both key styles:
+  // 1) SiteExp.tsx exportData keys: "Expenses", "Exp. Summary"
+  // 2) legacy keys: "Expense", "Summary"
+  const getVal = (row: any, keys: string[]) => {
+    for (const k of keys) {
+      const v = row?.[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+    }
+    return "";
+  };
+
   autoTable(doc, {
-    head: [
-      ["Site", "Date", "Expense", "Summary", "Payment", "Amount"],
-    ],
+    head: [["Site", "Date", "Expense", "Summary", "Payment", "Amount"]],
     body: data.map((row) => [
-      row.Site,
-      row.Date,
-      row.Expense,
-      row.Summary,
-      row.Payment,
-      row.Amount,
+      getVal(row, ["Site"]),
+      getVal(row, ["Date"]),
+      getVal(row, ["Expenses", "Expense"]), // ✅ FIX
+      getVal(row, ["Exp. Summary", "Summary"]), // ✅ FIX
+      getVal(row, ["Payment"]),
+      getVal(row, ["Amount"]),
     ]),
     styles: {
       fontSize: 9,
@@ -62,3 +61,4 @@ export const exportSiteExpenseToPDF = (
 
   doc.save(`${fileName}.pdf`);
 };
+

@@ -54,10 +54,11 @@ interface Expense {
   paymentDetails: string;
   amount: number;
 
-  // ✅ NEW: AUTO rows from Material Supplier Ledger
+  // ✅ AUTO rows
   isAuto?: boolean;
   autoSource?: string;
   supplierId?: string | null;
+  source?: string;
 }
 
 /* ================= API ================= */
@@ -66,6 +67,57 @@ const BASE_URL =
 
 const SITE_API = `${BASE_URL}/api/sites`;
 const EXP_API = `${BASE_URL}/api/site-exp`;
+
+/* =========================================================
+   ✅ FUEL PURCHASE DISPLAY FIX (Frontend Only)
+   - Fuel Purchase entries grouped by (site + fuelStation + fuelType)
+   - Expenses column: "Diesel Exp" / "Petrol Exp" etc.
+   - Exp. Summary: "Fuel Purchase"
+   - Payment: Fuel Station name (e.g. Biswas Fuel)
+   - Hide individual Fuel Purchase receipts (show only grouped totals)
+========================================================= */
+
+const toTime = (d: any) => {
+  const t = new Date(d).getTime();
+  return Number.isFinite(t) ? t : 0;
+};
+
+const slugify = (s: string) =>
+  String(s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+
+const isFuelPurchaseRow = (r: any) => {
+  const title = String(r?.expenseTitle || "").toLowerCase();
+  const summary = String(r?.summary || "").toLowerCase();
+  // Title usually: "Fuel Purchase - Diesel"
+  // Summary usually includes: "Fuel Station: Biswas Fuel | Fuel: Diesel | ..."
+  return title.includes("fuel purchase") || summary.includes("fuel station:");
+};
+
+const pickFuelType = (r: any) => {
+  const title = String(r?.expenseTitle || "");
+  const summary = String(r?.summary || "");
+
+  // "Fuel Purchase - Diesel"
+  let m = title.match(/fuel\s*purchase\s*-\s*([a-zA-Z]+)/i);
+  if (m?.[1]) return m[1].trim();
+
+  // "Fuel: Diesel |"
+  m = summary.match(/fuel\s*:\s*([^|]+)/i);
+  if (m?.[1]) return m[1].trim();
+
+  return "Diesel";
+};
+
+const pickFuelStationName = (r: any) => {
+  const summary = String(r?.summary || "");
+  const m = summary.match(/fuel\s*station\s*:\s*([^|]+)/i);
+  return (m?.[1] || "").trim() || "Fuel Station";
+};
 
 export default function SiteExp() {
   const { toast } = useToast();
@@ -146,9 +198,88 @@ export default function SiteExp() {
     };
   }, [viewMode]);
 
+  /* =========================================================
+     ✅ DISPLAY EXPENSES (Fuel Purchase grouped + simplified)
+  ========================================================= */
+  const displayExpenses = useMemo<Expense[]>(() => {
+    const list = Array.isArray(expenses) ? expenses : [];
+
+    const other: Expense[] = [];
+    const fuel: Expense[] = [];
+
+    for (const r of list) {
+      if (isFuelPurchaseRow(r)) fuel.push(r);
+      else other.push(r);
+    }
+
+    // group by (siteId + fuelStation + fuelType)
+    const map = new Map<
+      string,
+      {
+        siteId: string;
+        site: Expense["site"];
+        fuelStation: string;
+        fuelType: string;
+        amount: number;
+        maxDate: string;
+      }
+    >();
+
+    for (const r of fuel) {
+      const siteId = String((r as any)?.siteId || r?.site?.id || "");
+      const siteObj = r?.site || { siteName: "N/A" };
+      if (!siteId) {
+        // fallback (rare) -> keep row as-is
+        other.push(r);
+        continue;
+      }
+
+      const fuelType = pickFuelType(r);
+      const station = pickFuelStationName(r);
+      const key = `${siteId}__${station.toLowerCase()}__${fuelType.toLowerCase()}`;
+
+      const amt = Number((r as any)?.amount ?? 0) || 0;
+      const dt = (r as any)?.expenseDate || new Date().toISOString();
+
+      const ex = map.get(key);
+      if (!ex) {
+        map.set(key, {
+          siteId,
+          site: siteObj,
+          fuelStation: station,
+          fuelType,
+          amount: amt,
+          maxDate: dt,
+        });
+      } else {
+        ex.amount += amt;
+        if (toTime(dt) > toTime(ex.maxDate)) ex.maxDate = dt;
+      }
+    }
+
+    const groupedFuelRows: Expense[] = Array.from(map.values()).map((g) => ({
+      id: `AUTO_FUEL_${g.siteId}_${slugify(g.fuelStation)}_${slugify(g.fuelType)}`,
+      site: g.site,
+      expenseDate: g.maxDate,
+      expenseTitle: `${g.fuelType} Exp`, // ✅ Expenses column
+      summary: "Fuel Purchase", // ✅ Exp. Summary column
+      paymentDetails: g.fuelStation, // ✅ Payment column (Fuel Station)
+      amount: Number(g.amount.toFixed(2)),
+      isAuto: true,
+      autoSource: "FUEL_LEDGER",
+      source: "FUEL_LEDGER",
+    }));
+
+    const merged = [...other, ...groupedFuelRows].sort(
+      (a, b) => toTime(b?.expenseDate) - toTime(a?.expenseDate)
+    );
+
+    return merged;
+  }, [expenses]);
+
   /* ================= FILTER + GLOBAL SEARCH ================= */
   const filtered = useMemo(() => {
-    return expenses.filter((v) => {
+    return displayExpenses.filter((v) => {
       const q = search.toLowerCase();
 
       const matchSearch =
@@ -165,15 +296,16 @@ export default function SiteExp() {
       const matchSite = selectedSite ? v.site?.siteName === selectedSite : true;
       return matchSearch && matchSite;
     });
-  }, [expenses, search, selectedSite]);
+  }, [displayExpenses, search, selectedSite]);
 
   /* ✅ keep selection clean when expenses change */
   useEffect(() => {
     setSelectedIds((prev) => {
       const next = new Set<string>();
-      const allIds = new Set(expenses.map((e) => e.id));
+      // ✅ only manual ids are allowed in selection set
+      const allManualIds = new Set(expenses.filter((e) => !e.isAuto).map((e) => e.id));
       prev.forEach((id) => {
-        if (allIds.has(id)) next.add(id);
+        if (allManualIds.has(id)) next.add(id);
       });
       return next;
     });
@@ -553,7 +685,6 @@ export default function SiteExp() {
 
                           <td className="px-3 py-2">{row.summary}</td>
 
-                          {/* ✅ PAYMENT column now shows supplier name from backend */}
                           <td className="px-3 py-2">{row.paymentDetails}</td>
 
                           <td className="px-3 py-2 text-right font-semibold">
@@ -629,10 +760,18 @@ export default function SiteExp() {
             </div>
 
             <ul className="list-disc pl-5 space-y-1">
-              <li><b>Site</b> must match site name exactly as in Sites master.</li>
-              <li><b>Date</b> can be Excel Date or text (dd-mm-yyyy / dd/mm/yyyy / yyyy-mm-dd).</li>
-              <li><b>Expenses</b> is mandatory.</li>
-              <li><b>Amount</b> must be greater than 0.</li>
+              <li>
+                <b>Site</b> must match site name exactly as in Sites master.
+              </li>
+              <li>
+                <b>Date</b> can be Excel Date or text (dd-mm-yyyy / dd/mm/yyyy / yyyy-mm-dd).
+              </li>
+              <li>
+                <b>Expenses</b> is mandatory.
+              </li>
+              <li>
+                <b>Amount</b> must be greater than 0.
+              </li>
               <li>Every row will create a new expense entry.</li>
             </ul>
           </div>

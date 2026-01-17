@@ -1,3 +1,5 @@
+// D:\Projects\branao.in\clone\branao-Full-Kit\branao-backend\src\modules\site-exp\site-exp.service.ts
+
 import prisma from "../../lib/prisma";
 import { Prisma } from "@prisma/client";
 
@@ -30,7 +32,11 @@ const n = (v: any) => {
 
 const rowTotal = (r: any) => {
   // prefer DB totalAmt else qty*rate
-  if (r.totalAmt !== null && r.totalAmt !== undefined && !Number.isNaN(Number(r.totalAmt))) {
+  if (
+    r.totalAmt !== null &&
+    r.totalAmt !== undefined &&
+    !Number.isNaN(Number(r.totalAmt))
+  ) {
     return n(r.totalAmt);
   }
   return n(r.qty) * n(r.rate);
@@ -39,14 +45,14 @@ const rowTotal = (r: any) => {
 type AutoExpenseRow = {
   id: string;
   site: { id: string; siteName: string };
-  expenseDate: string;
+  expenseDate: string | Date;
   expenseTitle: string;
   summary: string;
   paymentDetails: string;
   amount: number;
   isAuto: true;
-  autoSource: "MATERIAL_SUPPLIER_LEDGER";
-  supplierId?: string | null;
+  autoSource: "MATERIAL_SUPPLIER_LEDGER" | "LABOUR_CONTRACTOR_LEDGER";
+  source: "MATERIAL_LEDGER" | "LABOUR_CONTRACTOR_LEDGER";
 };
 
 const TXN_SOURCE = "SITE_EXPENSE" as const;
@@ -59,6 +65,9 @@ const TX_OPTS = { timeout: 20000, maxWait: 20000 };
  * ✅ Upsert SiteTransaction for a SiteExpense record
  * Requires in schema:
  *   @@unique([source, sourceId])
+ *
+ * NOTE:
+ * - Hard delete mode: no isDeleted/deletedAt/deletedBy handling here.
  */
 async function upsertTxnForExpense(
   tx: TxClient,
@@ -70,9 +79,6 @@ async function upsertTxnForExpense(
     summary: string;
     paymentDetails: string | null;
     amount: any;
-    isDeleted?: boolean;
-    deletedAt?: Date | null;
-    deletedBy?: string | null;
   }
 ) {
   const title =
@@ -98,12 +104,6 @@ async function upsertTxnForExpense(
     },
   };
 
-  if (typeof expense.isDeleted === "boolean") {
-    common.isDeleted = expense.isDeleted;
-    common.deletedAt = expense.deletedAt ?? null;
-    common.deletedBy = expense.deletedBy ?? null;
-  }
-
   return tx.siteTransaction.upsert({
     where: {
       source_sourceId: {
@@ -118,23 +118,32 @@ async function upsertTxnForExpense(
 
 /* =========================================================
    ✅ AUTO EXPENSE FROM MATERIAL SUPPLIER LEDGER
-   - GROUP BY (siteId + material)
+   - GROUP BY (siteId + material + ledgerId) ✅ FIX
    - amount = SUM(totalAmt if present else qty*rate)
    - expenseDate = MAX(entryDate) in group
    - read-only rows: isAuto = true
+   - paymentDetails = SINGLE ledger name (party) ✅ FIX
 ========================================================= */
 
-function makeAutoId(siteId: string, material: string) {
-  const slug = material
+function makeAutoId(siteId: string, material: string, ledgerIdOrName: string) {
+  const slug = String(material || "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
-    .slice(0, 50);
-  return `AUTO_MSL_${siteId}_${slug || "material"}`;
+    .slice(0, 40);
+
+  const lslug = String(ledgerIdOrName || "unknown")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 30);
+
+  return `AUTO_MSL_${siteId}_${slug || "material"}_${lslug || "ledger"}`;
 }
 
-async function getAutoMaterialExpenses(siteId?: string) {
+async function getAutoMaterialExpenses(siteId?: string): Promise<AutoExpenseRow[]> {
   // sites map
   const sites = await prisma.site.findMany({
     select: { id: true, siteName: true },
@@ -144,7 +153,7 @@ async function getAutoMaterialExpenses(siteId?: string) {
   const where: any = {};
   if (siteId) where.siteId = siteId;
 
-  // ✅ fetch ledger rows (must include ledgerId)
+  // ✅ fetch ledger rows
   const ledgerRows = await prisma.materialSupplierLedger.findMany({
     where,
     select: {
@@ -159,10 +168,10 @@ async function getAutoMaterialExpenses(siteId?: string) {
     orderBy: { entryDate: "desc" },
   });
 
-  // ✅ build ledgerId set, then fetch Ledger names
+  // ✅ fetch Ledger names
   const ledgerIds = Array.from(
     new Set(ledgerRows.map((r) => r.ledgerId).filter(Boolean))
-  );
+  ) as string[];
 
   const ledgers = ledgerIds.length
     ? await prisma.ledger.findMany({
@@ -173,7 +182,7 @@ async function getAutoMaterialExpenses(siteId?: string) {
 
   const ledgerNameById = new Map(ledgers.map((l) => [l.id, l.name]));
 
-  // group by (siteId + material)
+  // ✅ GROUP BY (siteId + material + ledgerId)
   const groups = new Map<
     string,
     {
@@ -181,7 +190,8 @@ async function getAutoMaterialExpenses(siteId?: string) {
       material: string;
       amount: number;
       maxDate: Date;
-      ledgerNames: Set<string>;
+      ledgerId: string;
+      ledgerName: string;
     }
   >();
 
@@ -191,55 +201,45 @@ async function getAutoMaterialExpenses(siteId?: string) {
     const material = String(r.material || "").trim();
     if (!material) continue;
 
-    const amt =
-      r.totalAmt !== null && r.totalAmt !== undefined
-        ? Number(r.totalAmt) || 0
-        : (Number(r.qty) || 0) * (Number(r.rate) || 0);
-
-    const key = `${r.siteId}__${material.toLowerCase()}`;
-
+    const ledgerId = String(r.ledgerId || "UNKNOWN_LEDGER");
     const ledgerName =
       (r.ledgerId ? ledgerNameById.get(r.ledgerId) : null) || "Unknown Ledger";
 
+    const amt = rowTotal(r);
+
+    const key = `${r.siteId}__${material.toLowerCase()}__${ledgerId}`;
     const existing = groups.get(key);
+    const dt = r.entryDate || new Date();
+
     if (!existing) {
       groups.set(key, {
         siteId: r.siteId,
         material,
         amount: amt,
-        maxDate: r.entryDate || new Date(),
-        ledgerNames: new Set([ledgerName]),
+        maxDate: dt,
+        ledgerId,
+        ledgerName,
       });
     } else {
       existing.amount += amt;
-      const dt = r.entryDate || new Date();
       if (dt.getTime() > existing.maxDate.getTime()) existing.maxDate = dt;
-      existing.ledgerNames.add(ledgerName);
     }
   }
 
-  const formatLedgers = (set: Set<string>) => {
-    const arr = Array.from(set).filter(Boolean);
-    if (!arr.length) return "Unknown Ledger";
-    if (arr.length <= 3) return arr.join(", ");
-    return `${arr.slice(0, 3).join(", ")} +${arr.length - 3} more`;
-  };
-
-  const autoRows = Array.from(groups.values()).map((g) => {
+  const autoRows: AutoExpenseRow[] = Array.from(groups.values()).map((g) => {
     const sName = siteNameById.get(g.siteId) || "N/A";
 
     return {
-      id: makeAutoId(g.siteId, g.material),
-      siteId: g.siteId,
+      id: makeAutoId(g.siteId, g.material, g.ledgerId),
+      site: { id: g.siteId, siteName: sName },
       expenseDate: g.maxDate,
-      expenseTitle: g.material,
+      expenseTitle: g.material, // e.g. Sand / Limestone
       summary: "Material Purchase (Auto)",
-      // ✅ Payment column now shows Ledger.name(s)
-      paymentDetails: formatLedgers(g.ledgerNames),
+      paymentDetails: g.ledgerName, // ✅ single party only
       amount: Number(g.amount.toFixed(2)),
       isAuto: true,
+      autoSource: "MATERIAL_SUPPLIER_LEDGER",
       source: "MATERIAL_LEDGER",
-      site: { id: g.siteId, siteName: sName },
     };
   });
 
@@ -252,6 +252,79 @@ async function getAutoMaterialExpenses(siteId?: string) {
   return autoRows;
 }
 
+/* =========================================================
+   ✅ AUTO EXPENSE FROM LABOUR CONTRACTOR LEDGER (TOTAL PAID)
+   - GROUP BY (siteId + contractorId)
+   - amount = SUM(amount)
+   - expenseDate = MAX(paymentDate)
+   - Expenses: Labour Payment
+   - Exp. Summary: Labour Payment
+   - Payment: Contractor name
+   - read-only rows: isAuto = true
+========================================================= */
+
+function makeLabAutoId(siteId: string, contractorId: string) {
+  return `AUTO_LAB_${siteId}_${contractorId}`;
+}
+
+async function getAutoLabourExpenses(siteId?: string): Promise<AutoExpenseRow[]> {
+  // sites map
+  const sites = await prisma.site.findMany({
+    select: { id: true, siteName: true },
+  });
+  const siteNameById = new Map(sites.map((s) => [s.id, s.siteName]));
+
+  const where: any = {};
+  if (siteId) where.siteId = siteId;
+
+  // ✅ aggregate payments
+  const agg = await prisma.labourPayment.groupBy({
+    by: ["siteId", "contractorId"],
+    where,
+    _sum: { amount: true },
+    _max: { paymentDate: true },
+  });
+
+  const contractorIds = Array.from(
+    new Set(agg.map((a) => a.contractorId).filter(Boolean))
+  ) as string[];
+
+  const contractors = contractorIds.length
+    ? await prisma.labourContractor.findMany({
+        where: { id: { in: contractorIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+
+  const contractorNameById = new Map(contractors.map((c) => [c.id, c.name]));
+
+  const rows: AutoExpenseRow[] = agg.map((g) => {
+    const sName = siteNameById.get(g.siteId) || "N/A";
+    const cName =
+      contractorNameById.get(g.contractorId) || "Labour Contractor";
+
+    return {
+      id: makeLabAutoId(g.siteId, g.contractorId),
+      site: { id: g.siteId, siteName: sName },
+      expenseDate: g._max.paymentDate || new Date(),
+      expenseTitle: "Labour Payment",
+      summary: "Labour Payment",
+      paymentDetails: cName,
+      amount: Number(Number(g._sum.amount || 0).toFixed(2)),
+      isAuto: true,
+      autoSource: "LABOUR_CONTRACTOR_LEDGER",
+      source: "LABOUR_CONTRACTOR_LEDGER",
+    };
+  });
+
+  rows.sort(
+    (a, b) =>
+      new Date(b.expenseDate as any).getTime() -
+      new Date(a.expenseDate as any).getTime()
+  );
+
+  return rows;
+}
 
 /* =========================================================
    CREATE SITE EXPENSE  (+ SiteTransaction)
@@ -294,9 +367,6 @@ export const createSiteExpense = async (
       summary: created.summary,
       paymentDetails: created.paymentDetails,
       amount: created.amount,
-      isDeleted: created.isDeleted,
-      deletedAt: created.deletedAt,
-      deletedBy: created.deletedBy,
     });
 
     await tx.auditLog.create({
@@ -314,45 +384,11 @@ export const createSiteExpense = async (
   }, TX_OPTS);
 };
 
-
 /* =========================================================
-   ✅ GET ALL SITE EXPENSES (ACTIVE ONLY) + AUTO MATERIAL ROWS
+   ✅ GET ALL SITE EXPENSES + AUTO MATERIAL + AUTO LABOUR
 ========================================================= */
 export const getAllSiteExpenses = async () => {
   const manual = await prisma.siteExpense.findMany({
-    where: { isDeleted: false },
-    orderBy: { expenseDate: "desc" },
-    include: {
-      site: {
-        select: { id: true, siteName: true },
-      },
-    },
-  });
-
-  const manualMapped = manual.map((x) => ({
-    ...x,
-    isAuto: false,
-    source: "MANUAL",
-  }));
-
-  const auto = await getAutoMaterialExpenses();
-
-  // merge and sort by date desc
-  const merged: any[] = [...manualMapped, ...auto].sort((a, b) => {
-    const da = new Date(a.expenseDate).getTime();
-    const db = new Date(b.expenseDate).getTime();
-    return db - da;
-  });
-
-  return merged;
-};
-
-/* =========================================================
-   ✅ GET EXPENSES BY SITE (ACTIVE ONLY) + AUTO MATERIAL ROWS
-========================================================= */
-export const getExpensesBySite = async (siteId: string) => {
-  const manual = await prisma.siteExpense.findMany({
-    where: { siteId, isDeleted: false },
     orderBy: { expenseDate: "desc" },
     include: {
       site: { select: { id: true, siteName: true } },
@@ -365,13 +401,40 @@ export const getExpensesBySite = async (siteId: string) => {
     source: "MANUAL",
   }));
 
-  const auto = await getAutoMaterialExpenses(siteId);
+  const autoMaterial = await getAutoMaterialExpenses();
+  const autoLabour = await getAutoLabourExpenses();
 
-  const merged: any[] = [...manualMapped, ...auto].sort((a, b) => {
-    const da = new Date(a.expenseDate).getTime();
-    const db = new Date(b.expenseDate).getTime();
-    return db - da;
+  const merged: any[] = [...manualMapped, ...autoMaterial, ...autoLabour].sort(
+    (a, b) => new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime()
+  );
+
+  return merged;
+};
+
+/* =========================================================
+   ✅ GET EXPENSES BY SITE + AUTO MATERIAL + AUTO LABOUR
+========================================================= */
+export const getExpensesBySite = async (siteId: string) => {
+  const manual = await prisma.siteExpense.findMany({
+    where: { siteId },
+    orderBy: { expenseDate: "desc" },
+    include: {
+      site: { select: { id: true, siteName: true } },
+    },
   });
+
+  const manualMapped = manual.map((x) => ({
+    ...x,
+    isAuto: false,
+    source: "MANUAL",
+  }));
+
+  const autoMaterial = await getAutoMaterialExpenses(siteId);
+  const autoLabour = await getAutoLabourExpenses(siteId);
+
+  const merged: any[] = [...manualMapped, ...autoMaterial, ...autoLabour].sort(
+    (a, b) => new Date(b.expenseDate).getTime() - new Date(a.expenseDate).getTime()
+  );
 
   return merged;
 };
@@ -436,9 +499,6 @@ export const updateSiteExpense = async (
       summary: updated.summary,
       paymentDetails: updated.paymentDetails,
       amount: updated.amount,
-      isDeleted: updated.isDeleted,
-      deletedAt: updated.deletedAt,
-      deletedBy: updated.deletedBy,
     });
 
     await tx.auditLog.create({
@@ -458,111 +518,10 @@ export const updateSiteExpense = async (
 };
 
 /* =========================================================
-   SOFT DELETE SITE EXPENSE (+ SiteTransaction soft delete)
+   ✅ HARD DELETE SITE EXPENSE (ERP is HARD DELETE now)
+   - also remove SiteTransaction rows (source=SITE_EXPENSE)
 ========================================================= */
-export const softDeleteSiteExpense = async (
-  id: string,
-  userId?: string,
-  ip?: string
-) => {
-  return prisma.$transaction(async (tx) => {
-    const oldData = await tx.siteExpense.findUnique({ where: { id } });
-    if (!oldData) throw new Error("Expense not found");
-
-    const deleted = await tx.siteExpense.update({
-      where: { id },
-      data: {
-        isDeleted: true,
-        deletedAt: new Date(),
-        deletedBy: userId || null,
-      },
-    });
-
-    await tx.siteTransaction.update({
-      where: {
-        source_sourceId: {
-          source: TXN_SOURCE,
-          sourceId: id,
-        },
-      },
-      data: {
-        isDeleted: true,
-        deletedAt: deleted.deletedAt,
-        deletedBy: deleted.deletedBy,
-      } as any,
-    });
-
-    await tx.auditLog.create({
-      data: {
-        userId,
-        module: "SiteExpense",
-        recordId: id,
-        action: "DELETE",
-        oldData: oldData as any,
-        newData: deleted as any,
-        ip,
-      },
-    });
-
-    return deleted;
-  }, TX_OPTS);
-};
-
-/* =========================================================
-   RESTORE SITE EXPENSE (+ SiteTransaction restore)
-========================================================= */
-export const restoreSiteExpense = async (
-  id: string,
-  userId?: string,
-  ip?: string
-) => {
-  return prisma.$transaction(async (tx) => {
-    const oldData = await tx.siteExpense.findUnique({ where: { id } });
-    if (!oldData) throw new Error("Expense not found");
-
-    const restored = await tx.siteExpense.update({
-      where: { id },
-      data: {
-        isDeleted: false,
-        deletedAt: null,
-        deletedBy: null,
-      },
-    });
-
-    await tx.siteTransaction.update({
-      where: {
-        source_sourceId: {
-          source: TXN_SOURCE,
-          sourceId: id,
-        },
-      },
-      data: {
-        isDeleted: false,
-        deletedAt: null,
-        deletedBy: null,
-      } as any,
-    });
-
-    await tx.auditLog.create({
-      data: {
-        userId,
-        module: "SiteExpense",
-        recordId: id,
-        action: "RESTORE",
-        oldData: oldData as any,
-        newData: restored as any,
-        ip,
-      },
-    });
-
-    return restored;
-  }, TX_OPTS);
-};
-
-/* =========================================================
-   HARD DELETE SITE EXPENSE (DANGEROUS)
-========================================================= */
-export const hardDeleteSiteExpense = async (
+export const deleteSiteExpense = async (
   id: string,
   userId?: string,
   ip?: string
@@ -591,3 +550,8 @@ export const hardDeleteSiteExpense = async (
     return true;
   }, TX_OPTS);
 };
+
+/* =========================================================
+   Backward compatible exports (if any old controller still calls these)
+========================================================= */
+export const hardDeleteSiteExpense = deleteSiteExpense;

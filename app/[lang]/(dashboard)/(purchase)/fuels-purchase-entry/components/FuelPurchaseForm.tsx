@@ -13,50 +13,88 @@ import { Calendar } from "@/components/ui/calendar";
 /* ================= API BASE ================= */
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
 
-const FUEL_STATION_API = `${BASE_URL}/api/fuel-stations`;
+// ✅ Fuel Station will come from Ledgers (NO FuelStation model/table)
+const LEDGERS_API = `${BASE_URL}/api/ledgers`;
 const SITE_API = `${BASE_URL}/api/sites`;
-const FUEL_LEDGER_BULK_API = `${BASE_URL}/api/fuel-station-ledger/bulk`;
+
+// ✅ bulk save endpoint
+const FUEL_BULK_API = `${BASE_URL}/api/fuel-station-ledger/bulk`;
 
 /* ================= TYPES ================= */
-type FuelStation = { id: string; name: string; contactNo?: string | null };
 type Site = { id: string; siteName: string; isDeleted?: boolean };
 
+type FuelStationLedger = {
+  id: string;
+  name: string;
+  mobile?: string | null;
+  address?: string | null;
+  ledgerType?: { name?: string | null } | null;
+};
+
 type PurchaseType = "OWN_VEHICLE" | "RENT_VEHICLE";
+
+type FuelType = "Diesel" | "Petrol" | "CNG" | "LPG" | "AdBlue" | "Other";
 
 type EntryRow = {
   id: string;
 
   entryDate: Date | undefined;
 
-  through: string; // NEW
-  purchaseType: PurchaseType; // NEW
+  // ✅ Slip/Receipt No (Through se pehle)
+  slipNo: string;
 
-  vehicleNumber: string; // renamed
-  vehicleName: string; // NEW (Vehicle name)
+  through: string;
 
-  fuelType: string;
+  purchaseType: PurchaseType;
+
+  // ✅ Vehicle number
+  vehicleNumber: string;
+
+  // ✅ Vehicle name
+  vehicleName: string;
+
+  fuelType: FuelType;
+
   qty: string;
   rate: string;
 
-  slipNo: string;
-  remarks: string;
+  remark: string;
 };
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 const n = (v: any) => {
   const x = Number(String(v ?? "").trim());
   return Number.isFinite(x) ? x : 0;
 };
-const isPositive = (v: string) => n(v) > 0;
 
+const isPositiveNumber = (v: string) => {
+  const x = n(v);
+  return Number.isFinite(x) && x > 0;
+};
+
+function toISO(d?: Date) {
+  if (!d) return undefined;
+  const t = d.getTime();
+  return Number.isFinite(t) ? d.toISOString() : undefined;
+}
+
+function normalizeList(json: any) {
+  if (Array.isArray(json?.data)) return json.data;
+  if (Array.isArray(json)) return json;
+  return [];
+}
+
+/* ================= COMPONENT ================= */
 export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }) {
-  /* ================= TOP SELECT ================= */
-  const [fuelStationId, setFuelStationId] = useState("");
+  /* ================= TOP SELECTED ================= */
+  const [ledgerId, setLedgerId] = useState("");
   const [siteId, setSiteId] = useState("");
 
-  /* ================= MASTER DATA ================= */
-  const [fuelStations, setFuelStations] = useState<FuelStation[]>([]);
+  /* ================= DROPDOWN DATA ================= */
+  const [fuelStations, setFuelStations] = useState<FuelStationLedger[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+
   const [loadingStations, setLoadingStations] = useState(false);
   const [loadingSites, setLoadingSites] = useState(false);
 
@@ -65,62 +103,89 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
     {
       id: uid(),
       entryDate: new Date(),
-
+      slipNo: "",
       through: "",
       purchaseType: "OWN_VEHICLE",
-
       vehicleNumber: "",
       vehicleName: "",
-
       fuelType: "Diesel",
       qty: "",
       rate: "",
-
-      slipNo: "",
-      remarks: "",
+      remark: "",
     },
   ]);
 
   /* ================= LOADERS ================= */
-  const loadFuelStations = async () => {
-    try {
-      setLoadingStations(true);
-      const res = await fetch(`${FUEL_STATION_API}?_ts=${Date.now()}`, {
-        cache: "no-store",
-        credentials: "include",
-      });
-      const json = await res.json().catch(() => ({}));
-      const list = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
-      setFuelStations(list);
-    } catch (e) {
-      console.error(e);
-      setFuelStations([]);
-    } finally {
-      setLoadingStations(false);
-    }
-  };
-
   const loadSites = async () => {
     try {
       setLoadingSites(true);
+
       const res = await fetch(`${SITE_API}?_ts=${Date.now()}`, {
         cache: "no-store",
         credentials: "include",
       });
+
       const json = await res.json().catch(() => ({}));
-      const list: Site[] = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+      const list: Site[] = normalizeList(json);
+
       const active = list.filter((s) => !s?.isDeleted);
       active.sort((a, b) => (a.siteName || "").localeCompare(b.siteName || ""));
       setSites(active);
     } catch (e) {
-      console.error(e);
+      console.error("❌ Sites load failed:", e);
       setSites([]);
     } finally {
       setLoadingSites(false);
     }
   };
 
+  // ✅ Fuel Stations from /api/ledgers
+  const loadFuelStations = async () => {
+    try {
+      setLoadingStations(true);
+
+      const res = await fetch(`${LEDGERS_API}?_ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      const json = await res.json().catch(() => ({}));
+      const list: FuelStationLedger[] = normalizeList(json);
+
+      // ✅ Filter (safe). If ledgerType missing OR filter empty -> fallback to all.
+      const filtered = list.filter((l) => {
+        const t = String(l?.ledgerType?.name || "").toLowerCase();
+        const nm = String(l?.name || "").toLowerCase();
+        return (
+          t.includes("fuel") ||
+          t.includes("station") ||
+          nm.includes("fuel") ||
+          nm.includes("petrol") ||
+          nm.includes("diesel")
+        );
+      });
+
+      const finalList = (filtered.length ? filtered : list)
+        .map((x) => ({ id: x.id, name: x.name, ledgerType: x.ledgerType || null }))
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+      setFuelStations(finalList as any);
+    } catch (e) {
+      console.error("❌ Fuel Stations load failed:", e);
+      setFuelStations([]);
+    } finally {
+      setLoadingStations(false);
+    }
+  };
+
   useEffect(() => {
+    // ✅ Debug hint
+    if (!BASE_URL) {
+      console.warn(
+        "⚠️ NEXT_PUBLIC_API_BASE_URL is empty. Set it to http://localhost:5000 and restart Next dev server."
+      );
+    }
+
     loadFuelStations();
     loadSites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,19 +202,15 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
       {
         id: uid(),
         entryDate: new Date(),
-
+        slipNo: "",
         through: "",
         purchaseType: "OWN_VEHICLE",
-
         vehicleNumber: "",
         vehicleName: "",
-
         fuelType: "Diesel",
         qty: "",
         rate: "",
-
-        slipNo: "",
-        remarks: "",
+        remark: "",
       },
     ]);
   };
@@ -159,25 +220,21 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
   };
 
   const resetAll = () => {
-    setFuelStationId("");
+    setLedgerId("");
     setSiteId("");
     setRows([
       {
         id: uid(),
         entryDate: new Date(),
-
+        slipNo: "",
         through: "",
         purchaseType: "OWN_VEHICLE",
-
         vehicleNumber: "",
         vehicleName: "",
-
         fuelType: "Diesel",
         qty: "",
         rate: "",
-
-        slipNo: "",
-        remarks: "",
+        remark: "",
       },
     ]);
   };
@@ -186,32 +243,34 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
   const rowValid = (r: EntryRow) => {
     return (
       !!r.entryDate &&
-      r.purchaseType &&
+      r.slipNo.trim() &&
+      r.through.trim() &&
+      !!r.purchaseType &&
       r.vehicleNumber.trim() &&
-      r.fuelType.trim() &&
-      isPositive(r.qty) &&
-      isPositive(r.rate) &&
-      r.slipNo.trim()
+      r.vehicleName.trim() &&
+      !!r.fuelType &&
+      isPositiveNumber(r.qty) &&
+      isPositiveNumber(r.rate)
     );
   };
 
   const canSave = useMemo(() => {
-    if (!fuelStationId || !siteId) return false;
+    if (!ledgerId || !siteId) return false;
     if (!rows.length) return false;
     return rows.every(rowValid);
-  }, [fuelStationId, siteId, rows]);
+  }, [ledgerId, siteId, rows]);
 
-  const rowAmount = (r: EntryRow) => n(r.qty) * n(r.rate);
-
+  /* ================= TOTALS ================= */
   const totals = useMemo(() => {
     const totalQty = rows.reduce((a, r) => a + n(r.qty), 0);
-    const totalAmt = rows.reduce((a, r) => a + rowAmount(r), 0);
-    return { totalQty, totalAmt };
+    const totalAmt = rows.reduce((a, r) => a + n(r.qty) * n(r.rate), 0);
+    const ready = rows.filter(rowValid).length;
+    return { totalQty, totalAmt, ready, rowsCount: rows.length };
   }, [rows]);
 
   /* ================= SAVE BULK ================= */
   const saveAll = async () => {
-    if (!fuelStationId || !siteId) {
+    if (!ledgerId || !siteId) {
       alert("Please select Fuel Station and Site.");
       return;
     }
@@ -220,37 +279,42 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
       return;
     }
     if (!rows.every(rowValid)) {
-      alert("Please complete all rows (Date + required fields).");
+      alert("Please complete all rows.");
       return;
     }
 
     try {
       const fd = new FormData();
-      fd.append("entryDate", new Date().toISOString()); // fallback
-      fd.append("fuelStationId", fuelStationId);
+
+      // global defaults
+      fd.append("entryDate", new Date().toISOString());
+
+      // ✅ Send ledgerId (primary)
+      fd.append("ledgerId", ledgerId);
+
+      // ✅ backward compatible (controller also accepts fuelStationId)
+      fd.append("fuelStationId", ledgerId);
+
       fd.append("siteId", siteId);
 
       const payloadRows = rows.map((r) => ({
         rowKey: r.id,
-        entryDate: r.entryDate ? r.entryDate.toISOString() : undefined,
-
-        through: r.through?.trim() || null,
+        entryDate: toISO(r.entryDate),
+        slipNo: r.slipNo.trim(),
+        through: r.through.trim(),
         purchaseType: r.purchaseType,
-
         vehicleNumber: r.vehicleNumber.trim(),
-        vehicleName: r.vehicleName?.trim() || null,
-
-        fuelType: r.fuelType.trim(),
+        vehicleName: r.vehicleName.trim(),
+        fuelType: r.fuelType,
         qty: n(r.qty),
         rate: n(r.rate),
-
-        slipNo: r.slipNo?.trim() || null,
-        remarks: r.remarks?.trim() || null,
+        amount: n(r.qty) * n(r.rate),
+        remarks: r.remark?.trim() || null, // ✅ backend expects "remarks"
       }));
 
       fd.append("rows", JSON.stringify(payloadRows));
 
-      const res = await fetch(FUEL_LEDGER_BULK_API, {
+      const res = await fetch(FUEL_BULK_API, {
         method: "POST",
         credentials: "include",
         body: fd,
@@ -267,16 +331,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
     }
   };
 
-  const selectedStation = useMemo(
-    () => fuelStations.find((x) => x.id === fuelStationId) || null,
-    [fuelStations, fuelStationId]
-  );
-
-  const selectedSite = useMemo(
-    () => sites.find((x) => x.id === siteId) || null,
-    [sites, siteId]
-  );
-
+  /* ================= UI ================= */
   return (
     <div
       className="h-full w-full"
@@ -298,13 +353,11 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
               <div className="text-xs text-muted-foreground mt-1">
                 Top में Fuel Station / Site चुनो, नीचे table में multiple dates + entries add करो.
               </div>
-
-              {(selectedStation?.name || selectedSite?.siteName) && (
-                <div className="text-[11px] text-muted-foreground mt-1 truncate">
-                  {selectedStation?.name ? `Fuel Station: ${selectedStation.name}` : ""}
-                  {selectedSite?.siteName ? ` • Site: ${selectedSite.siteName}` : ""}
+              {siteId ? (
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  • Site: {sites.find((s) => s.id === siteId)?.siteName || ""}
                 </div>
-              )}
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
@@ -323,8 +376,8 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                 <Label>Fuel Station</Label>
                 <select
                   className="border px-3 py-2 rounded-md bg-background w-full h-9 text-sm"
-                  value={fuelStationId}
-                  onChange={(e) => setFuelStationId(e.target.value)}
+                  value={ledgerId}
+                  onChange={(e) => setLedgerId(e.target.value)}
                 >
                   <option value="">
                     {loadingStations ? "Loading fuel stations..." : "Select Fuel Station"}
@@ -335,6 +388,10 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                     </option>
                   ))}
                 </select>
+
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {ledgerId ? "Fuel Station selected" : "Select from dropdown (DB fetched)"}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -356,22 +413,25 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            {/* QUICK STATS */}
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
               <div className="p-2 rounded-lg border bg-background/30">
-                <div className="text-[11px] text-muted-foreground">Rows</div>
-                <div className="text-sm font-semibold">{rows.length}</div>
+                <p className="text-[10px] md:text-[11px] text-default-700">Rows</p>
+                <p className="text-base md:text-lg font-bold leading-tight">{totals.rowsCount}</p>
               </div>
               <div className="p-2 rounded-lg border bg-background/30">
-                <div className="text-[11px] text-muted-foreground">Ready</div>
-                <div className="text-sm font-semibold">{rows.filter(rowValid).length}</div>
+                <p className="text-[10px] md:text-[11px] text-default-700">Ready</p>
+                <p className="text-base md:text-lg font-bold leading-tight">{totals.ready}</p>
               </div>
               <div className="p-2 rounded-lg border bg-background/30">
-                <div className="text-[11px] text-muted-foreground">Total Qty</div>
-                <div className="text-sm font-semibold">{totals.totalQty.toFixed(3)}</div>
+                <p className="text-[10px] md:text-[11px] text-default-700">Total Qty</p>
+                <p className="text-base md:text-lg font-bold leading-tight">{totals.totalQty.toFixed(3)}</p>
               </div>
               <div className="p-2 rounded-lg border bg-background/30">
-                <div className="text-[11px] text-muted-foreground">Total Amount</div>
-                <div className="text-sm font-semibold">₹ {totals.totalAmt.toFixed(2)}</div>
+                <p className="text-[10px] md:text-[11px] text-default-700">Total Amount</p>
+                <p className="text-base md:text-lg font-bold leading-tight">
+                  ₹ {totals.totalAmt.toFixed(2)}
+                </p>
               </div>
             </div>
           </div>
@@ -389,34 +449,31 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                 }}
               >
                 <div style={{ overflowX: "auto" }}>
-                  <div style={{ minWidth: 1900 }}>
+                  <div style={{ minWidth: 1700 }}>
                     <table className="w-full text-sm border-collapse">
                       <thead className="sticky top-0 z-20 bg-muted/80 backdrop-blur border-b">
                         <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
                           <th className="px-2 py-2 w-10 text-center"> </th>
                           <th className="px-2 py-2 text-left">Date</th>
-
+                          <th className="px-2 py-2 text-left">Slip/Receipt No</th>
                           <th className="px-2 py-2 text-left">Through</th>
                           <th className="px-2 py-2 text-left">PurchaseType</th>
-
                           <th className="px-2 py-2 text-left">Vehicle Number</th>
                           <th className="px-2 py-2 text-left">Vehicle</th>
-
                           <th className="px-2 py-2 text-left">Fuel Type</th>
                           <th className="px-2 py-2 text-left">Qty</th>
                           <th className="px-2 py-2 text-left">Rate</th>
                           <th className="px-2 py-2 text-left">Amount</th>
-
-                          <th className="px-2 py-2 text-left">Slip/Receipt No</th>
-                          <th className="px-2 py-2 text-left">Remarks</th>
-
-                          <th className="px-2 py-2 text-left w-36">Status</th>
+                          <th className="px-2 py-2 text-left">Remark</th>
+                          <th className="px-2 py-2 text-left w-32">Status</th>
                         </tr>
                       </thead>
 
                       <tbody>
                         {rows.map((r, idx) => {
                           const ok = rowValid(r);
+                          const amount = n(r.qty) * n(r.rate);
+
                           return (
                             <tr
                               key={r.id}
@@ -439,7 +496,6 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 </div>
                               </td>
 
-                              {/* DATE */}
                               <td className="px-2 py-2 align-top">
                                 <Popover>
                                   <PopoverTrigger asChild>
@@ -454,6 +510,7 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                       <CalendarIcon className="h-4 w-4 opacity-60" />
                                     </button>
                                   </PopoverTrigger>
+
                                   <PopoverContent className="p-0 z-[9999]" align="start" side="bottom" sideOffset={8}>
                                     <Calendar
                                       mode="single"
@@ -464,39 +521,46 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 </Popover>
                               </td>
 
-                              {/* THROUGH */}
+                              <td className="px-2 py-2 align-top">
+                                <Input
+                                  placeholder="Slip / Receipt no"
+                                  value={r.slipNo}
+                                  onChange={(e) => updateRow(r.id, { slipNo: e.target.value })}
+                                  className="h-8 w-44 text-sm"
+                                />
+                              </td>
+
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="Through name"
                                   value={r.through}
                                   onChange={(e) => updateRow(r.id, { through: e.target.value })}
-                                  className="h-8 w-48 text-sm"
+                                  className="h-8 w-52 text-sm"
                                 />
                               </td>
 
-                              {/* PURCHASE TYPE */}
                               <td className="px-2 py-2 align-top">
                                 <select
-                                  className="border px-2 py-1.5 rounded-md bg-background w-40 h-8 text-sm"
+                                  className="border px-2 py-1.5 rounded-md bg-background w-44 h-8 text-sm"
                                   value={r.purchaseType}
-                                  onChange={(e) => updateRow(r.id, { purchaseType: e.target.value as PurchaseType })}
+                                  onChange={(e) =>
+                                    updateRow(r.id, { purchaseType: e.target.value as PurchaseType })
+                                  }
                                 >
                                   <option value="OWN_VEHICLE">Own Vehicle</option>
                                   <option value="RENT_VEHICLE">Rent Vehicle</option>
                                 </select>
                               </td>
 
-                              {/* VEHICLE NUMBER */}
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="CG 04 AB 1234"
                                   value={r.vehicleNumber}
                                   onChange={(e) => updateRow(r.id, { vehicleNumber: e.target.value })}
-                                  className="h-8 w-44 text-sm"
+                                  className="h-8 w-48 text-sm"
                                 />
                               </td>
 
-                              {/* VEHICLE NAME */}
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="Vehicle name"
@@ -506,17 +570,21 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 />
                               </td>
 
-                              {/* FUEL TYPE */}
                               <td className="px-2 py-2 align-top">
-                                <Input
-                                  placeholder="Diesel / Petrol"
+                                <select
+                                  className="border px-2 py-1.5 rounded-md bg-background w-36 h-8 text-sm"
                                   value={r.fuelType}
-                                  onChange={(e) => updateRow(r.id, { fuelType: e.target.value })}
-                                  className="h-8 w-40 text-sm"
-                                />
+                                  onChange={(e) => updateRow(r.id, { fuelType: e.target.value as FuelType })}
+                                >
+                                  <option value="Diesel">Diesel</option>
+                                  <option value="Petrol">Petrol</option>
+                                  <option value="CNG">CNG</option>
+                                  <option value="LPG">LPG</option>
+                                  <option value="AdBlue">AdBlue</option>
+                                  <option value="Other">Other</option>
+                                </select>
                               </td>
 
-                              {/* QTY */}
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="Qty"
@@ -527,7 +595,6 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 />
                               </td>
 
-                              {/* RATE */}
                               <td className="px-2 py-2 align-top">
                                 <Input
                                   placeholder="Rate"
@@ -538,38 +605,25 @@ export default function FuelPurchaseForm({ onCancel }: { onCancel?: () => void }
                                 />
                               </td>
 
-                              {/* AMOUNT */}
                               <td className="px-2 py-2 align-top">
                                 <Input
-                                  value={rowAmount(r) ? String(rowAmount(r).toFixed(2)) : ""}
-                                  placeholder="Auto"
+                                  value={amount ? String(amount.toFixed(2)) : ""}
+                                  placeholder="Amount"
                                   className="h-8 w-28 text-sm"
                                   readOnly
                                   tabIndex={-1}
                                 />
                               </td>
 
-                              {/* SLIP */}
                               <td className="px-2 py-2 align-top">
                                 <Input
-                                  placeholder="Slip/Receipt no"
-                                  value={r.slipNo}
-                                  onChange={(e) => updateRow(r.id, { slipNo: e.target.value })}
-                                  className="h-8 w-40 text-sm"
-                                />
-                              </td>
-
-                              {/* REMARKS */}
-                              <td className="px-2 py-2 align-top">
-                                <Input
-                                  placeholder="Optional"
-                                  value={r.remarks}
-                                  onChange={(e) => updateRow(r.id, { remarks: e.target.value })}
+                                  placeholder="Remark"
+                                  value={r.remark}
+                                  onChange={(e) => updateRow(r.id, { remark: e.target.value })}
                                   className="h-8 w-52 text-sm"
                                 />
                               </td>
 
-                              {/* STATUS */}
                               <td className="px-2 py-2 align-top">
                                 {ok ? (
                                   <div className="text-green-500 text-xs font-medium">Ready</div>

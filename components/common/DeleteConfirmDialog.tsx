@@ -41,8 +41,8 @@ interface DeleteConfirmDialogProps {
 export default function DeleteConfirmDialog({
   open,
   title = "Confirm Delete",
-  description = "This record will be moved to Deleted Records. You can restore it later.",
-  confirmText = "Yes, Delete",
+  description = "This record will be permanently deleted from database. This action cannot be undone.",
+  confirmText = "Yes, Delete Permanently",
   cancelText = "Cancel",
   loading = false,
   onCancel,
@@ -63,22 +63,13 @@ export default function DeleteConfirmDialog({
         </DialogHeader>
 
         <DialogFooter className="flex justify-end gap-2 pt-4">
-          <Button
-            variant="outline"
-            onClick={onCancel}
-            disabled={loading}
-          >
+          <Button variant="outline" onClick={onCancel} disabled={loading}>
             {cancelText}
           </Button>
 
-          <Button
-            variant="soft"
-            onClick={onConfirm}
-            disabled={loading}
-          >
-            {loading && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
+          {/* ✅ destructive intent */}
+          <Button variant="soft" onClick={onConfirm} disabled={loading}>
+            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {confirmText}
           </Button>
         </DialogFooter>

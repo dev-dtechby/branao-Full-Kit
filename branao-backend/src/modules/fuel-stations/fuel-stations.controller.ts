@@ -1,64 +1,88 @@
 import { Request, Response } from "express";
 import prisma from "../../lib/prisma";
 
-export const getFuelStations = async (_req: Request, res: Response) => {
+/**
+ * Fuel Stations are fetched from Ledger table itself (NO separate FuelStation model).
+ * We filter by ledgerType name OR ledger name containing common fuel words.
+ *
+ * API:
+ *  GET /api/fuel-stations
+ *  GET /api/fuel-stations?q=vaishnav
+ */
+export const getFuelStations = async (req: Request, res: Response) => {
   try {
-    const list = await prisma.fuelStation.findMany({
-      orderBy: { name: "asc" },
-    });
-    res.json({ success: true, data: list });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e?.message || "Failed" });
-  }
-};
+    const q = String(req.query?.q || "").trim();
 
-export const createFuelStation = async (req: Request, res: Response) => {
-  try {
-    const { name, contactNo, address } = req.body || {};
-    if (!String(name || "").trim()) {
-      return res.status(400).json({ success: false, message: "Name required" });
+    // If you ever want to see deleted too (optional)
+    const includeDeleted = String(req.query?.includeDeleted || "false") === "true";
+
+    const where: any = {
+      ...(includeDeleted ? {} : { isDeleted: false }),
+      OR: [
+        // 1) ledgerType based match (best)
+        {
+          ledgerType: {
+            name: { contains: "fuel", mode: "insensitive" },
+          },
+        },
+        {
+          ledgerType: {
+            name: { contains: "station", mode: "insensitive" },
+          },
+        },
+        // 2) name based fallback match
+        { name: { contains: "fuel", mode: "insensitive" } },
+        { name: { contains: "pump", mode: "insensitive" } },
+        { name: { contains: "petrol", mode: "insensitive" } },
+        { name: { contains: "diesel", mode: "insensitive" } },
+      ],
+    };
+
+    // Optional search query (q) → filter further
+    if (q) {
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { mobile: { contains: q, mode: "insensitive" } },
+            { address: { contains: q, mode: "insensitive" } },
+            { ledgerType: { name: { contains: q, mode: "insensitive" } } },
+          ],
+        },
+      ];
     }
 
-    const created = await prisma.fuelStation.create({
-      data: {
-        name: String(name).trim(),
-        contactNo: contactNo ? String(contactNo).trim() : null,
-        address: address ? String(address).trim() : null,
+    const list = await prisma.ledger.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        mobile: true,
+        address: true,
+        ledgerType: { select: { id: true, name: true } },
+        isDeleted: true,
+        createdAt: true,
       },
+      orderBy: { name: "asc" },
     });
 
-    res.status(201).json({ success: true, data: created });
+    // Standardize output for frontend dropdown
+    const data = (list || []).map((x) => ({
+      id: x.id,
+      name: x.name,
+      mobile: x.mobile ?? null,
+      address: x.address ?? null,
+      ledgerType: x.ledgerType ? { name: x.ledgerType.name } : null,
+      isDeleted: x.isDeleted ?? false,
+      createdAt: x.createdAt,
+    }));
+
+    return res.json({ success: true, data });
   } catch (e: any) {
-    res.status(500).json({ success: false, message: e?.message || "Failed" });
-  }
-};
-
-export const updateFuelStation = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { name, contactNo, address } = req.body || {};
-
-    const updated = await prisma.fuelStation.update({
-      where: { id },
-      data: {
-        name: name != null ? String(name).trim() : undefined,
-        contactNo: contactNo != null ? String(contactNo).trim() : undefined,
-        address: address != null ? String(address).trim() : undefined,
-      },
+    console.error("❌ getFuelStations error:", e);
+    return res.status(500).json({
+      success: false,
+      message: e?.message || "Failed to load fuel stations",
     });
-
-    res.json({ success: true, data: updated });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e?.message || "Failed" });
-  }
-};
-
-export const deleteFuelStation = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    await prisma.fuelStation.delete({ where: { id } });
-    res.json({ success: true, message: "Deleted" });
-  } catch (e: any) {
-    res.status(500).json({ success: false, message: e?.message || "Failed" });
   }
 };

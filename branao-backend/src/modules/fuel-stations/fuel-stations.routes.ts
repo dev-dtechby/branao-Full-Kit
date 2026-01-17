@@ -1,16 +1,9 @@
 import { Router } from "express";
-import {
-  createFuelStation,
-  deleteFuelStation,
-  getFuelStations,
-  updateFuelStation,
-} from "./fuel-stations.controller";
+import { getFuelStations } from "./fuel-stations.controller";
 
 const router = Router();
 
+// GET /api/fuel-stations?q=...
 router.get("/", getFuelStations);
-router.post("/", createFuelStation);
-router.put("/:id", updateFuelStation);
-router.delete("/:id", deleteFuelStation);
 
 export default router;
