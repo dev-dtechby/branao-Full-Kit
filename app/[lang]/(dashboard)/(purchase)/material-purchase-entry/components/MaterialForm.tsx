@@ -7,14 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { CalendarIcon, Plus, X, RefreshCcw, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import AddMaterial from "./addMaterial";
+import { useRouter } from "next/navigation";
 
 /* ================= API BASE ================= */
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "";
@@ -33,7 +30,7 @@ type Material = { id: string; name: string };
 type EntryRow = {
   id: string;
 
-  // ✅ NEW: row-wise date
+  // ✅ row-wise date
   entryDate: Date | undefined;
 
   vehicleNo: string;
@@ -41,6 +38,9 @@ type EntryRow = {
   materialId: string;
   size: string;
   qty: string;
+
+  // ✅ NEW: rate
+  rate: string;
 
   receiptNo: string;
 };
@@ -56,7 +56,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
   /* ================= (TOP) SELECTED ================= */
   const [supplierId, setSupplierId] = useState("");
   const [siteId, setSiteId] = useState("");
-
+  const router = useRouter();
   /* ================= DROPDOWN DATA ================= */
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -65,6 +65,15 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
   const [loadingSup, setLoadingSup] = useState(false);
   const [loadingSites, setLoadingSites] = useState(false);
   const [loadingMat, setLoadingMat] = useState(false);
+
+  const handleCancel = () => {
+    if (onCancel) return onCancel();
+
+    // fallback: go back
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+    }
+  };
 
   /* ================= ROWS ================= */
   const [rows, setRows] = useState<EntryRow[]>([
@@ -75,6 +84,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
       materialId: "",
       size: "",
       qty: "",
+      rate: "", // ✅ NEW
       receiptNo: "",
     },
   ]);
@@ -160,15 +170,14 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
         materialId: "",
         size: "",
         qty: "",
+        rate: "", // ✅ NEW
         receiptNo: "",
       },
     ]);
   };
 
   const removeRow = (id: string) => {
-    setRows((prev) =>
-      prev.length === 1 ? prev : prev.filter((r) => r.id !== id)
-    );
+    setRows((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.id !== id)));
   };
 
   const resetAll = () => {
@@ -182,6 +191,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
         materialId: "",
         size: "",
         qty: "",
+        rate: "", // ✅ NEW
         receiptNo: "",
       },
     ]);
@@ -194,6 +204,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
       r.vehicleNo.trim() &&
       r.materialId &&
       isPositiveNumber(r.qty) &&
+      isPositiveNumber(r.rate) && // ✅ NEW
       r.receiptNo.trim()
     );
   };
@@ -215,7 +226,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
       return;
     }
     if (!rows.every(rowValid)) {
-      alert("Please complete all rows (Date required).");
+      alert("Please complete all rows (Date/Qty/Rate required).");
       return;
     }
 
@@ -228,7 +239,6 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
 
       const payloadRows = rows.map((r) => ({
         rowKey: r.id,
-        // ✅ NEW: row-wise date (backend should read this; if not, it will fallback to form entryDate)
         entryDate: r.entryDate ? r.entryDate.toISOString() : undefined,
 
         vehicleNo: r.vehicleNo.trim(),
@@ -240,6 +250,9 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
         material: materialNameById.get(r.materialId) || r.materialId,
         size: r.size?.trim() || null,
         qty: r.qty,
+
+        // ✅ NEW: Rate (per unit)
+        rate: r.rate,
       }));
 
       fd.append("rows", JSON.stringify(payloadRows));
@@ -285,12 +298,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setOpenAddMaterial(true)}
-              >
+              <Button type="button" size="sm" variant="outline" onClick={() => setOpenAddMaterial(true)}>
                 + Material
               </Button>
               <Button type="button" size="sm" onClick={addRow}>
@@ -355,17 +363,20 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                 }}
               >
                 <div style={{ overflowX: "auto" }}>
-                  <div style={{ minWidth: 1200 }}>
+                  <div style={{ minWidth: 1300 }}>
                     <table className="w-full text-sm border-collapse">
                       <thead className="sticky top-0 z-20 bg-muted/80 backdrop-blur border-b">
                         <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
                           <th className="px-2 py-2 w-10 text-center"> </th>
-                          {/* ✅ NEW column */}
                           <th className="px-2 py-2 text-left">Date</th>
                           <th className="px-2 py-2 text-left">Vehicle</th>
                           <th className="px-2 py-2 text-left">Material</th>
                           <th className="px-2 py-2 text-left">Size</th>
                           <th className="px-2 py-2 text-left">Qty</th>
+
+                          {/* ✅ NEW */}
+                          <th className="px-2 py-2 text-left">Rate</th>
+
                           <th className="px-2 py-2 text-left">Receipt No</th>
                           <th className="px-2 py-2 text-left w-36">Status</th>
                         </tr>
@@ -396,7 +407,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 </div>
                               </td>
 
-                              {/* ✅ ROW DATE PICKER */}
+                              {/* ROW DATE PICKER */}
                               <td className="px-2 py-2 align-top">
                                 <Popover>
                                   <PopoverTrigger asChild>
@@ -407,25 +418,17 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                         !r.entryDate && "text-muted-foreground"
                                       )}
                                     >
-                                      {r.entryDate
-                                        ? r.entryDate.toLocaleDateString()
-                                        : "Select Date"}
+                                      {r.entryDate ? r.entryDate.toLocaleDateString() : "Select Date"}
                                       <CalendarIcon className="h-4 w-4 opacity-60" />
                                     </button>
                                   </PopoverTrigger>
-                                  <PopoverContent
-                                    className="p-0 z-[9999]"
-                                    align="start"
-                                    side="bottom"
-                                    sideOffset={8}
-                                  >
+                                  <PopoverContent className="p-0 z-[9999]" align="start" side="bottom" sideOffset={8}>
                                     <Calendar
                                       mode="single"
                                       selected={r.entryDate}
                                       onSelect={(d) => updateRow(r.id, { entryDate: d })}
                                     />
                                   </PopoverContent>
-
                                 </Popover>
                               </td>
 
@@ -433,9 +436,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 <Input
                                   placeholder="CG 04 AB 1234"
                                   value={r.vehicleNo}
-                                  onChange={(e) =>
-                                    updateRow(r.id, { vehicleNo: e.target.value })
-                                  }
+                                  onChange={(e) => updateRow(r.id, { vehicleNo: e.target.value })}
                                   className="h-8 w-52 text-sm"
                                 />
                               </td>
@@ -444,9 +445,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 <select
                                   className="border px-2 py-1.5 rounded-md bg-background w-52 h-8 text-sm"
                                   value={r.materialId}
-                                  onChange={(e) =>
-                                    updateRow(r.id, { materialId: e.target.value })
-                                  }
+                                  onChange={(e) => updateRow(r.id, { materialId: e.target.value })}
                                 >
                                   <option value="">
                                     {loadingMat ? "Loading..." : "Select Material"}
@@ -463,9 +462,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 <Input
                                   placeholder="40mm"
                                   value={r.size}
-                                  onChange={(e) =>
-                                    updateRow(r.id, { size: e.target.value })
-                                  }
+                                  onChange={(e) => updateRow(r.id, { size: e.target.value })}
                                   className="h-8 w-28 text-sm"
                                 />
                               </td>
@@ -474,10 +471,19 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 <Input
                                   placeholder="Qty"
                                   value={r.qty}
-                                  onChange={(e) =>
-                                    updateRow(r.id, { qty: e.target.value })
-                                  }
+                                  onChange={(e) => updateRow(r.id, { qty: e.target.value })}
                                   className="h-8 w-24 text-sm"
+                                  inputMode="decimal"
+                                />
+                              </td>
+
+                              {/* ✅ NEW: Rate */}
+                              <td className="px-2 py-2 align-top">
+                                <Input
+                                  placeholder="Rate"
+                                  value={r.rate}
+                                  onChange={(e) => updateRow(r.id, { rate: e.target.value })}
+                                  className="h-8 w-28 text-sm"
                                   inputMode="decimal"
                                 />
                               </td>
@@ -486,22 +492,16 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                                 <Input
                                   placeholder="Receipt no"
                                   value={r.receiptNo}
-                                  onChange={(e) =>
-                                    updateRow(r.id, { receiptNo: e.target.value })
-                                  }
+                                  onChange={(e) => updateRow(r.id, { receiptNo: e.target.value })}
                                   className="h-8 w-36 text-sm"
                                 />
                               </td>
 
                               <td className="px-2 py-2 align-top">
                                 {ok ? (
-                                  <div className="text-green-500 text-xs font-medium">
-                                    Ready
-                                  </div>
+                                  <div className="text-green-500 text-xs font-medium">Ready</div>
                                 ) : (
-                                  <div className="text-[11px] text-muted-foreground">
-                                    Fill required fields
-                                  </div>
+                                  <div className="text-[11px] text-muted-foreground">Fill required fields</div>
                                 )}
                               </td>
                             </tr>
@@ -510,10 +510,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
 
                         {rows.length === 0 && (
                           <tr>
-                            <td
-                              colSpan={8}
-                              className="p-6 text-center text-muted-foreground"
-                            >
+                            <td colSpan={9} className="p-6 text-center text-muted-foreground">
                               No rows
                             </td>
                           </tr>
@@ -534,8 +531,7 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
           <div className="border-t bg-background/60 backdrop-blur p-3 md:p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-xs text-muted-foreground">
-                Rows: <b>{rows.length}</b> • Ready:{" "}
-                <b>{rows.filter(rowValid).length}</b>
+                Rows: <b>{rows.length}</b> • Ready: <b>{rows.filter(rowValid).length}</b>
               </div>
 
               <div className="flex flex-wrap gap-2 justify-end">
@@ -549,13 +545,10 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
                   Save
                 </Button>
 
-                <Button
-                  variant="outline"
-                  onClick={() => onCancel?.()}
-                  className="gap-2"
-                >
+                <Button variant="outline" onClick={handleCancel} className="gap-2">
                   Cancel
                 </Button>
+
               </div>
             </div>
           </div>
@@ -573,14 +566,8 @@ export default function MaterialForm({ onCancel }: { onCancel?: () => void }) {
         >
           <div className="h-full min-h-0 flex flex-col">
             <div className="shrink-0 px-4 md:px-6 py-4 border-b bg-background/60 backdrop-blur flex items-center justify-between">
-              <div className="text-base md:text-lg font-semibold">
-                Material Master
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setOpenAddMaterial(false)}
-              >
+              <div className="text-base md:text-lg font-semibold">Material Master</div>
+              <Button size="sm" variant="outline" onClick={() => setOpenAddMaterial(false)}>
                 Close
               </Button>
             </div>
