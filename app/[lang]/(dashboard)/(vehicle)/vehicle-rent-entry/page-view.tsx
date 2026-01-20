@@ -1,20 +1,27 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import VehicleRentEntryForm from "@/app/[lang]/(dashboard)/(vehicle)/vehicle-rent-entry/components/VehicleRentEntryForm";
+
 interface Props {
   trans: any;
 }
 
 export default function PageView({ trans }: Props) {
+  const router = useRouter();
+
   return (
     <div className="space-y-6">
-      <div className="text-2xl font-medium text-default-800">
-        Vehicle Rent Entry
-      </div>
+      <div className="text-2xl font-medium text-default-800">Vehicle Rent Entry</div>
 
-      <div className="card p-6 rounded-md border">
-        <h3 className="text-lg font-semibold">Vehicle Rent Form</h3>
-        <p className="text-default-500">Form Coming Soon...</p>
-      </div>
+      {/* ✅ Directly open VehicleRentEntryForm */}
+      <VehicleRentEntryForm
+        open={true}
+        onClose={() => router.push("/vehicle-rent-ledger")}
+        onCreated={async () => {
+          router.push("/vehicle-rent-ledger");
+        }}
+      />
     </div>
   );
 }
